@@ -5,7 +5,7 @@ description: 把开发任务派发给 OpenAI Codex CLI 实施的通用闭环。C
 
 # /codex-dev — codex 派工开发闭环
 
-分工：Claude 出方案、写任务书、编排、验收评审、合并提交；codex 只实施。整个流程自动推进，只在 BLOCKED、合并冲突需裁决、或突破角色分工时停下来问用户。每个任务状态变化时向用户报一行进度。
+分工：Claude 出方案、写任务书、编排、验收评审、合并提交；codex 只实施。整个流程自动推进，只在 BLOCKED、合并冲突需裁决、或突破角色分工时停下来问用户。每个任务状态变化时向用户报一行进度。**派单后把该任务的跟踪地址打印给用户**：并发轨给 omega dashboard 地址，串行轨给 `tail -f` 的 `events.jsonl` 路径。
 
 两条轨道，共享同一套任务书/验收/评审/合并纪律：
 
@@ -118,6 +118,8 @@ codex exec -s workspace-write \
   </dev/null 2>"$RUN/stderr.log" > "$RUN/events.jsonl"
 ```
 
+派单后把跟踪地址打印给用户：`tail -f "$RUN/events.jsonl"`（事件流逐步更新）。
+
 执行雷区（违反即翻车）：
 
 - **stdin 必须 `</dev/null`**：codex 总是读 stdin，不关闭就永久阻塞（症状：零输出、零 CPU、貌似挂起）。**管道陷阱**：`echo "..." | codex ... </dev/null` 里 `</dev/null` 会覆盖管道，codex 收到空输入——prompt 一律走位置参数，永不走管道。
@@ -144,7 +146,7 @@ grep '"type":"turn.completed"' "$RUN/events.jsonl" | tail -1
 
 ## Step 4B：并发轨（omegacode）
 
-前提：各任务 worktree 与环境已按 Step 3 备好。写 workflow 文件到 `$REPO_ROOT/.runtime/codex-dev/fanout.workflow.js`：
+前提：各任务 worktree 与环境已按 Step 3 备好。把 workflow 写到 `$REPO_ROOT/.runtime/codex-dev/<本次任务名>-fanout.workflow.js`——**前缀用本次派工的任务/项目名**（omega 看板按文件名显示 run，这样一眼认出是哪个，而非千篇一律的 fanout）；`-fanout.workflow.js` 后缀固定，标明这是编排脚本：
 
 ```js
 export const meta = {
@@ -173,25 +175,23 @@ return await parallel(args.tasks.map((t) => () =>
 
 ```bash
 RUN_DIR="$REPO_ROOT/.runtime/codex-dev"; mkdir -p "$RUN_DIR"
+WF="$RUN_DIR/<本次任务名>-fanout.workflow.js"     # 上面的 workflow 就写到这里；文件名即看板 run 名
 ARGS=$(python3 -c 'import json;print(json.dumps({"tasks":[...]}))')
 
-nohup "$OMEGA" run "$RUN_DIR/fanout.workflow.js" --args "$ARGS" \
-  >"$RUN_DIR/omega-run.log" 2>&1 &
+nohup "$OMEGA" run "$WF" --args "$ARGS" >"$RUN_DIR/omega-run.log" 2>&1 &
 OMEGA_PID=$!
 
-# omega 起跑即向日志写 `view: http://127.0.0.1:<port>/#/run/<runId>`（**别加 --json**，会抑制该行）。
-# 从日志解析本次 run 的 URL/runId——精确对应这次启动，不靠按文件名猜（多个同名 run 会认错）。
+# omega 起跑即把 view URL 写进日志（**别加 --json**，会抑制该行）；从日志解析出本次 run 的地址
 for _ in $(seq 1 20); do
   VIEW=$(grep -oE 'http://127\.0\.0\.1:[0-9]+/#/run/wf_[0-9a-f]+' "$RUN_DIR/omega-run.log" | head -1)
   [ -n "$VIEW" ] && break; sleep 0.5
 done
-RUN_ID=${VIEW##*/}
-printf '{"runId":"%s","pid":%s,"dashboard":"%s","workflow":"%s/fanout.workflow.js","log":"%s/omega-run.log"}\n' \
-  "$RUN_ID" "$OMEGA_PID" "$VIEW" "$RUN_DIR" "$RUN_DIR" > "$RUN_DIR/omega-run.json"
-echo "▶ omega dashboard: $VIEW"   # 派单后第一时间把这个地址报给用户
+printf '{"runId":"%s","pid":%s,"dashboard":"%s","workflow":"%s","log":"%s/omega-run.log"}\n' \
+  "${VIEW##*/}" "$OMEGA_PID" "$VIEW" "$WF" "$RUN_DIR" > "$RUN_DIR/omega-run.json"
+echo "▶ omega dashboard: $VIEW"   # 派单后把这个地址打印给用户
 ```
 
-- **派单后立刻把 dashboard 地址（`$VIEW`）报给用户**——omega 的只读 web 看板，可实时看每个 codex 的 phase / 进度 / token 用量；这是用户跟踪后台并发任务的主入口（串行轨无看板，用进度汇报跟踪）。
+- **把 dashboard 地址（`$VIEW`）打印给用户**——只读 web 看板，实时看各 codex 的 phase / 进度 / token；是完整 per-run 地址（带 `/#/run/<runId>`），多次派单也认得对那个。
 - 关键设计：**不用 omegacode 的 `worktree:` 选项**（它自建 worktree 时 Claude 插不进装环境这步），用 `cwd:` 指向预建 worktree——omegacode 纯做确定性编排（并发调度、30 分钟无进展 watchdog、journal、token 统计），worktree 生命周期归 Claude。
 - 它经 `codex app-server` JSON-RPC 驱动 codex，串行轨的 stdin/超时雷区不适用。
 - runId 起跑时就由 omega 写进 `omega-run.log` 的 `view:` 行（上面已解析落盘，含真实端口）；完成后从 `omega-run.log` 或 `~/.omegacode/runs/<runId>/` 读结构化结果。
@@ -212,7 +212,8 @@ omega 起跑后是 detached 进程，会话/终端关掉它仍在后台跑。这
   cat "$RUN_DIR/omega-run.json"                 # 取 runId / dashboard（含真实端口）
   "$OMEGA" runs                                 # 还在跑？看 status / agents 数
   "$OMEGA" serve                                # 重开 dashboard（自动选端口，已起则复用）
-  "$OMEGA" run "$RUN_DIR/fanout.workflow.js" --resume <runId>   # 崩/中断 → 只续跑未完成部分
+  WF=$(grep -oE '"workflow":"[^"]*"' "$RUN_DIR/omega-run.json" | cut -d'"' -f4)
+  "$OMEGA" run "$WF" --resume <runId>           # 崩/中断 → 只续跑未完成部分（workflow 路径从落盘记录读）
   ```
 
 - 收尾后清理：`"$OMEGA" runs --prune-stale` 清掉已死的 run。

@@ -18,7 +18,9 @@
 - `codex-dev`：并发轨新增「后台运行与重连」小节——detached 起跑即落盘
   runId/dashboard/pid，任何新会话（含终端已关）凭 `omega-run.json` +
   `omegacode runs` + `--resume` 重连，不依赖 watcher 进程存活。
-- `codex-dev`：并发派单后第一时间把 omega dashboard 地址报给用户，便于实时跟踪进度。
+- `codex-dev`：派单后把跟踪地址打印给用户（并发轨 dashboard 地址、串行轨 `events.jsonl` 路径）。
+- `codex-dev`：并发编排脚本改名为 `<任务名>-fanout.workflow.js`——omega 看板按文件名显示 run，
+  这样按项目/任务认出是哪个，不再千篇一律叫 `fanout`；重连从落盘的 `omega-run.json` 读回 workflow 路径。
 
 ### Fixed
 
