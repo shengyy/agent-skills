@@ -188,8 +188,10 @@ done
 RUN_ID=${VIEW##*/}
 printf '{"runId":"%s","pid":%s,"dashboard":"%s","workflow":"%s/fanout.workflow.js","log":"%s/omega-run.log"}\n' \
   "$RUN_ID" "$OMEGA_PID" "$VIEW" "$RUN_DIR" "$RUN_DIR" > "$RUN_DIR/omega-run.json"
+echo "▶ omega dashboard: $VIEW"   # 派单后第一时间把这个地址报给用户
 ```
 
+- **派单后立刻把 dashboard 地址（`$VIEW`）报给用户**——omega 的只读 web 看板，可实时看每个 codex 的 phase / 进度 / token 用量；这是用户跟踪后台并发任务的主入口（串行轨无看板，用进度汇报跟踪）。
 - 关键设计：**不用 omegacode 的 `worktree:` 选项**（它自建 worktree 时 Claude 插不进装环境这步），用 `cwd:` 指向预建 worktree——omegacode 纯做确定性编排（并发调度、30 分钟无进展 watchdog、journal、token 统计），worktree 生命周期归 Claude。
 - 它经 `codex app-server` JSON-RPC 驱动 codex，串行轨的 stdin/超时雷区不适用。
 - runId 起跑时就由 omega 写进 `omega-run.log` 的 `view:` 行（上面已解析落盘，含真实端口）；完成后从 `omega-run.log` 或 `~/.omegacode/runs/<runId>/` 读结构化结果。

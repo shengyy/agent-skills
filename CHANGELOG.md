@@ -18,6 +18,7 @@
 - `codex-dev`：并发轨新增「后台运行与重连」小节——detached 起跑即落盘
   runId/dashboard/pid，任何新会话（含终端已关）凭 `omega-run.json` +
   `omegacode runs` + `--resume` 重连，不依赖 watcher 进程存活。
+- `codex-dev`：并发派单后第一时间把 omega dashboard 地址报给用户，便于实时跟踪进度。
 
 ### Fixed
 
