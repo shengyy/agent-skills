@@ -11,6 +11,13 @@
 
 - SVG 仓库横幅 `assets/banner.svg`，展示在 README 顶部。
 - 英文 `README.md`（主）与中文 `README.zh-CN.md`，顶部互相切换。
+- README 加 omegacode dashboard 截图 `assets/dashboard.png`。
+
+### Changed
+
+- `codex-dev`：并发轨新增「后台运行与重连」小节——detached 起跑即落盘
+  runId/dashboard/pid，任何新会话（含终端已关）凭 `omega-run.json` +
+  `omegacode runs` + `--resume` 重连，不依赖 watcher 进程存活。
 
 ## [0.1.0] - 2026-06-13
 

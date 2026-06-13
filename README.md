@@ -53,6 +53,10 @@ omegacode doctor   # verify the codex worker is ready
 
 > Sandbox note: the delegation commands force `-s workspace-write` internally and don't rely on your global default. If your `~/.codex/config.toml` sets `danger-full-access`, just be aware — the skill overrides it explicitly.
 
+The concurrent track runs as a **detached background job with a live dashboard** — close your terminal and the run keeps going; any new session reattaches via the recorded run ID (no babysitting process required).
+
+![omegacode dashboard — concurrent codex tasks](assets/dashboard.png)
+
 ## Usage
 
 ```bash

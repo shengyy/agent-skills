@@ -53,6 +53,10 @@ omegacode doctor   # 验证 codex worker 就绪
 
 > 沙箱说明：派工命令内部已强制 `-s workspace-write`，不依赖全局默认。若本机 `~/.codex/config.toml` 设了 `danger-full-access`，知悉即可，skill 会显式覆盖。
 
+并发轨是 **detached 后台任务，自带实时 dashboard**——关掉终端 run 照样在跑，任何新会话凭落盘的 runId 就能重连（不靠 watcher 进程续命）。
+
+![omegacode dashboard — 并发 codex 任务](assets/dashboard.png)
+
 ## Usage
 
 ```bash

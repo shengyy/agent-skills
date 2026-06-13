@@ -170,18 +170,43 @@ return await parallel(args.tasks.map((t) => () =>
 ))
 ```
 
-调用（`tasks[].brief` 传任务书全文；后台跑，完成后读 stdout 的结构化结果）：
+调用（`tasks[].brief` 传任务书全文）。**后台 detached 起跑，并把可重连的真相落盘**——omega 是 nohup detached 进程，本会话/终端关掉它照样在后台跑（优点：不占会话），但正因如此，起跑就要记下 runId / dashboard / pid，断了才找得回（见下「后台运行与重连」）：
 
 ```bash
-"$OMEGA" run "$REPO_ROOT/.runtime/codex-dev/fanout.workflow.js" \
-  --args "$(python3 -c 'import json;print(json.dumps({"tasks":[...]}))')"
+RUN_DIR="$REPO_ROOT/.runtime/codex-dev"; mkdir -p "$RUN_DIR"
+ARGS=$(python3 -c 'import json;print(json.dumps({"tasks":[...]}))')
+
+nohup "$OMEGA" run "$RUN_DIR/fanout.workflow.js" --args "$ARGS" \
+  >"$RUN_DIR/omega-run.log" 2>&1 &
+OMEGA_PID=$!; sleep 2
+RUN_ID=$("$OMEGA" runs 2>/dev/null | awk '/fanout\.workflow\.js/{print $1; exit}')
+printf '{"runId":"%s","pid":%s,"dashboard":"http://127.0.0.1:4123/#/run/%s","workflow":"%s/fanout.workflow.js","log":"%s/omega-run.log"}\n' \
+  "$RUN_ID" "$OMEGA_PID" "$RUN_ID" "$RUN_DIR" "$RUN_DIR" > "$RUN_DIR/omega-run.json"
 ```
 
 - 关键设计：**不用 omegacode 的 `worktree:` 选项**（它自建 worktree 时 Claude 插不进装环境这步），用 `cwd:` 指向预建 worktree——omegacode 纯做确定性编排（并发调度、30 分钟无进展 watchdog、journal、token 统计），worktree 生命周期归 Claude。
 - 它经 `codex app-server` JSON-RPC 驱动 codex，串行轨的 stdin/超时雷区不适用。
-- 实时观察：`"$OMEGA" serve` 开 dashboard。中断恢复：`"$OMEGA" run <file> --resume <runId>` 只重跑未完成部分。
+- `--json` 只在 run 结束时输出最终结果；跑中途要拿 runId 用 `"$OMEGA" runs`（按 workflow 文件名认）。完成后从 `omega-run.log` 或 `~/.omegacode/runs/<runId>/` 读结构化结果。
 - 单个 agent 失败在结果数组里是 null/failed 状态——只打回该任务，不影响其余。
 - 附加玩法（用户点名才用）：困难任务可跑内置 `bake-off`（codex 与 claude-code 在隔离 worktree 各自实现，盲评出胜者）或 `multi-provider-review`（双模型独立评审再合成）。
+
+### 后台运行与重连
+
+omega 起跑后是 detached 进程，会话/终端关掉它仍在后台跑。这是并发轨的核心优点（不占会话），但要求**真相落盘、绝不依赖某个 watcher 进程活着**——否则会话一死就只剩孤儿 run、没人通知，下次进来又得满世界找它。
+
+- **真相来源**（断会话也在）：`$RUN_DIR/omega-run.json`（runId / dashboard / pid）+ omega 自身的 `~/.omegacode/runs/<runId>/` journal。
+- **watcher 是可选的即时提醒**：在线时可另起后台轮询 `"$OMEGA" runs`、结束时通知用户；但它只是锦上添花，**不是真相来源**，死了不影响重连。
+- **任何新会话重连**（哪怕原终端已关）：
+
+  ```bash
+  RUN_DIR="$(git rev-parse --show-toplevel)/.runtime/codex-dev"
+  cat "$RUN_DIR/omega-run.json"                 # 取 runId / dashboard
+  "$OMEGA" runs                                 # 还在跑？看 status / agents 数
+  "$OMEGA" serve --port 4123                    # 重开 dashboard（已起则复用）
+  "$OMEGA" run "$RUN_DIR/fanout.workflow.js" --resume <runId>   # 崩/中断 → 只续跑未完成部分
+  ```
+
+- 收尾后清理：`"$OMEGA" runs --prune-stale` 清掉已死的 run。
 
 ## Step 5：机械验收（每任务独立；任一失败 → Step 7 打回）
 
@@ -254,4 +279,4 @@ git -C "$REPO_ROOT" worktree remove "$WT" && git -C "$REPO_ROOT" branch -d "code
 
 ## 恢复协议
 
-会话中断后再进入：扫 `$REPO_ROOT/.runtime/codex-dev/*/state.json` 按 phase 续跑（`dispatched` 且 events 无 `turn.completed` → 查 codex 进程是否还在；`rework-N` → 重新验收；`accepted` → 进合并）。omega 轨另有 journal：`"$OMEGA" run <file> --resume <runId>`。worktree 与 thread_id 都在状态文件里，无需重派。
+会话中断后再进入：扫 `$REPO_ROOT/.runtime/codex-dev/*/state.json` 按 phase 续跑（`dispatched` 且 events 无 `turn.completed` → 查 codex 进程是否还在；`rework-N` → 重新验收；`accepted` → 进合并）。omega 轨读 `.runtime/codex-dev/omega-run.json` 拿 runId/dashboard，`"$OMEGA" runs` 看是否在跑，`--resume <runId>` 续跑未完成部分（详见「后台运行与重连」）。worktree 与 thread_id 都在状态文件里，无需重派。
