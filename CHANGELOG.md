@@ -29,6 +29,12 @@
 
 ### Fixed
 
+- `codex-dev`：第二轮 codex 联网源码评审修复（codex 自行 clone omegacode 逐条核对）——
+  ① 空 `view:` 行不再误判为"omega 没起来"（viewer 起不来但 run 照常完成，验自 `cli.ts:439/448`）：
+  runId 改从 `omega runs` 按唯一文件名权威获取，无 dashboard 时也始终打印日志跟踪地址，不再派单后自杀；
+  ② `BATCH` 名加唯一性守卫（防同名批次覆盖 run.json/log/args）；
+  ③ 重连 `J()` 把路径作为 argv 传入（不再插值进 Python 源码，路径含特殊字符也不崩）；
+  ④ `~/.omegacode` 改 `${OMEGACODE_HOME:-~/.omegacode}`（尊重 omega 数据根覆盖）。
 - `codex-dev`：去掉写死的 `~/.npm-global` 路径——omega 检测改用 `command -v omegacode`，
   安装口径统一为标准 `npm install -g omegacode`，可移植到任意机器。
 - `codex-dev`：并发轨 runId 改为从 `omega-run.log` 的 `view:` 行解析（含真实端口），

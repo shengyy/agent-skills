@@ -179,6 +179,7 @@ RUN_DIR="$REPO_ROOT/.runtime/codex-dev"; mkdir -p "$RUN_DIR"
 BATCH=<batch-name>                               # lowercase kebab-case; the only variable used throughout, so names can't drift
 WF="$RUN_DIR/$BATCH-fanout.workflow.js"          # the workflow above MUST be written to this file
 LOG="$RUN_DIR/$BATCH.log"; RUNJSON="$RUN_DIR/$BATCH-run.json"; ARGSFILE="$RUN_DIR/$BATCH-args.json"
+[ -e "$RUNJSON" ] && { echo "batch name '$BATCH' already used ($RUNJSON exists) — pick a unique BATCH, or remove the old record if that run is done"; exit 1; }   # keep names unique so files/runs never collide
 python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"   # persist args; reused verbatim on resume
 [ -s "$ARGSFILE" ] || { echo "ARGS generation failed, stop"; exit 1; }
 ```
@@ -192,23 +193,29 @@ python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"   # pe
 Right after (foreground; reads the log the background run is writing), capture the dashboard URL and persist the reconnect record:
 
 ```bash
-for _ in $(seq 1 20); do          # omega writes the view URL to the log at startup; parse this run's address (real port included)
-  VIEW=$(grep -oE 'http://127\.0\.0\.1:[0-9]+/#/run/wf_[0-9a-f]+' "$LOG" | head -1)
-  [ -n "$VIEW" ] && break; sleep 0.5
+# runId is authoritative from `omega runs` (matched by our unique filename); the dashboard URL is best-effort — only present if the viewer came up
+RID=""; VIEW=""
+for _ in $(seq 1 20); do
+  [ -z "$VIEW" ] && VIEW=$(grep -oE 'http://127\.0\.0\.1:[0-9]+/#/run/wf_[0-9a-f]+' "$LOG" | head -1)
+  RID=$("$OMEGA" runs 2>/dev/null | awk -v f="$BATCH-fanout.workflow.js" '$NF==f{print $1; exit}')
+  [ -n "$RID" ] && break; sleep 0.5
 done
-[ -n "$VIEW" ] || { echo "omega didn't come up (no view: line within 10s), check $LOG:"; tail -20 "$LOG"; exit 1; }   # hard stop, don't write an empty record
-python3 - "$VIEW" "$WF" "$LOG" "$ARGSFILE" "$RUNJSON" <<'PY'   # build JSON safely with python (won't break on special chars in paths)
+# hard-fail ONLY if the run never registered; a missing viewer (no view: line) is NOT a failure — omega runs fine without one
+[ -n "$RID" ] || { echo "omega run never registered, check $LOG:"; tail -20 "$LOG"; exit 1; }
+python3 - "$RID" "$VIEW" "$WF" "$LOG" "$ARGSFILE" "$RUNJSON" <<'PY'   # build JSON safely with python
 import json,sys
-v,wf,log,af,out=sys.argv[1:6]
-json.dump({"runId":v.rsplit("/",1)[-1],"dashboard":v,"workflow":wf,"log":log,"argsFile":af}, open(out,"w"))
+rid,v,wf,log,af,out=sys.argv[1:7]
+json.dump({"runId":rid,"dashboard":v,"workflow":wf,"log":log,"argsFile":af}, open(out,"w"))
 PY
-echo "▶ omega dashboard: $VIEW"   # print this address to the user
+# ALWAYS print a tracking address — dashboard if the viewer is up, else the log
+[ -n "$VIEW" ] && echo "▶ omega dashboard: $VIEW" || echo "(viewer not up — no web dashboard for this run)"
+echo "▶ track: tail -f $LOG    (status: \"$OMEGA\" runs)"
 ```
 
 - **Print the dashboard address (`$VIEW`) to the user** — a read-only web board to watch each codex's phase / progress / token use live; it's the full per-run URL (with `/#/run/<runId>`), so it stays unambiguous across multiple dispatches.
 - Key design: **don't use omegacode's `worktree:` option** (when it builds its own worktree, Claude can't inject the env-setup step); use `cwd:` pointing at the prebuilt worktree — omegacode does pure deterministic orchestration (concurrency scheduling, 30-min no-progress watchdog, journal, token stats), and the worktree lifecycle belongs to Claude.
 - It drives codex over `codex app-server` JSON-RPC; the serial track's stdin/timeout minefield doesn't apply.
-- The runId is written by omega into the `view:` line of the log at startup (parsed and persisted above, with the real port); on completion read the structured result from the log or `~/.omegacode/runs/<runId>/`.
+- The runId comes from `omega runs` (matched by the unique filename — authoritative even if the viewer never started); the dashboard URL, when the viewer is up, is the `view:` line in the log. On completion read the structured result from the log or `${OMEGACODE_HOME:-~/.omegacode}/runs/<runId>/`.
 - A single failed agent shows as null/failed in the results array — rework only that task, the rest are unaffected.
 - Extras (only when the user asks): hard tasks can run the built-in `bake-off` (codex and claude-code each implement in isolated worktrees, blind-judged for a winner) or `multi-provider-review` (two models review independently, then synthesize).
 
@@ -218,7 +225,7 @@ echo "▶ omega dashboard: $VIEW"   # print this address to the user
 
 **If the session died before omega finished** (the background run dies with the session; omega's recovery model is "the run dir is the truth, `--resume` continues"), reconnect from a new session via the persisted record:
 
-- **Source of truth**: `$RUN_DIR/<BATCH>-run.json` (runId / dashboard / workflow / argsFile, **per-batch, never overwriting each other**) + omega's own `~/.omegacode/runs/<runId>/` journal.
+- **Source of truth**: `$RUN_DIR/<BATCH>-run.json` (runId / dashboard / workflow / argsFile, **per-batch, never overwriting each other**) + omega's own `${OMEGACODE_HOME:-~/.omegacode}/runs/<runId>/` journal.
 - **Reconnect from any new session** (even if the original terminal is closed):
 
   ```bash
@@ -226,7 +233,7 @@ echo "▶ omega dashboard: $VIEW"   # print this address to the user
   RUN_DIR="$(git rev-parse --show-toplevel)/.runtime/codex-dev"
   ls "$RUN_DIR"/*-run.json                         # list each batch's record, pick the one to recover
   RUNJSON="$RUN_DIR/<BATCH>-run.json"
-  J() { python3 -c "import json,sys;print(json.load(open('$RUNJSON'))[sys.argv[1]])" "$1"; }   # read fields safely (handles spaces/special chars)
+  J() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$RUNJSON" "$1"; }   # read fields safely (path passed as argv, not interpolated into source)
   echo "dashboard: $(J dashboard)"                 # print the address to the user
   "$OMEGA" runs                                    # still running? check status / agent count
   # resume (run auto-starts the board and re-prints the view: line); **must replay the original --args-file**, or args precondition mismatch:
