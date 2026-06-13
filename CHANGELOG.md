@@ -39,7 +39,9 @@
   ① **卡住→上报**显式化 + 防卡死 backstop：watchdog 措辞改准（30min 无进展 → 失败 stalled turn →
   失败任务 → 完成通知 → 按名上报），并补病态卡死（子进程吞 interrupt/SIGTERM）兜底：
   超 watchdog 窗口（~45min）且看板无进展即查 `runs`/日志、上报、`--prune-stale`，绝不无限等；
-  ② **≤3 并发真正强制**：dispatch 命令加 `--concurrency 3`（omega 默认 100，原先只是文字未生效）；
+  ② **并发真正强制、且按机器自适应**：dispatch 的 `--concurrency` 在运行时按本机算
+  （`cores − 2`，按每 agent ~2GB 内存封顶，再封顶 16；omega 默认 100，原先文字写"3"也没生效），
+  可用 `CODEX_DEV_CONCURRENCY` 覆盖——不写死数字，朋友的机器按他的硬件自动伸缩；
   ③ `BATCH` 唯一性守卫**也查 `omega runs` 同名 run**（防"已注册但 run.json 未写"的窗口选错 run）。
   评审确认大部分保证 HOLD；移除 codex-exec 串行轨（无 omega 兜底 / 返工丢 codex 会话上下文）为既定取舍，按设计保留。
 - `codex-dev`：第二轮 codex 联网源码评审修复（codex 自行 clone omegacode 逐条核对）——
