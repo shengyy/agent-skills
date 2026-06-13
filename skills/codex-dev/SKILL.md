@@ -40,7 +40,7 @@ Collisions are prevented at dispatch-time orchestration, not patched up afterwar
 
 1. **Independence check**: for each candidate task, estimate the set of files/modules it will touch (from the project's spec docs and existing code structure). Tasks whose file sets are disjoint and have no import/interface coupling may run in the **same run** as parallel agents; any overlap or coupling → split into **separate ordered runs**, or merge into one task.
 2. **Dependency ordering**: B depends on A's output → dispatch B only after A is merged back to the main branch.
-3. **Concurrency auto-scales to the machine**: each agent runs a full local build/test in its worktree + consumes codex API rate-limit budget — so unlike a fan-out of lightweight/read-only agents, the binding limit is this machine's build/test headroom and your codex plan's rate limits, not an agent-count ceiling. The dispatch derives `--concurrency` from the box (`cores − 2`, bounded by ~2 GB RAM per agent, capped 16; omega's own default is 100 — far too many heavy local agents). Override with `CODEX_DEV_CONCURRENCY=<N>` for a big box + high codex limits.
+3. **Concurrency capped at 10**: the dispatch passes `--concurrency 10` (omega's own default is 100). Each agent is a real codex coding agent that uses codex API rate-limit budget, but they're CLI processes — light on local memory — so 10 concurrent is a comfortable ceiling; a batch with more independent tasks simply queues.
 4. **Model & reasoning-effort tiers** (set per agent; honor the user's request when named):
 
 | Tier | When | Params |
@@ -147,22 +147,12 @@ LOG="$RUN_DIR/$BATCH.log"; RUNJSON="$RUN_DIR/$BATCH-run.json"; ARGSFILE="$RUN_DI
 { [ -e "$RUNJSON" ] || "$OMEGA" runs 2>/dev/null | awk -v f="$BATCH-fanout.workflow.js" '$NF==f{seen=1} END{exit seen?0:1}'; } && { echo "batch name '$BATCH' already in use — pick a unique BATCH"; exit 1; }
 python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"   # persist args; reused verbatim on resume
 [ -s "$ARGSFILE" ] || { echo "ARGS generation failed, stop"; exit 1; }
-# concurrency auto-scales to THIS machine: cores-2, bounded by ~2GB RAM/agent (each runs a full build/test), capped 16; override with CODEX_DEV_CONCURRENCY
-read CORES MEMGB <<<"$(python3 - <<'PY'
-import os
-try: m = os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // (1024**3)
-except Exception: m = 8
-print(os.cpu_count() or 4, m)
-PY
-)"
-CONC=$(( CORES>2 ? CORES-2 : 1 )); [ $((MEMGB/2)) -lt "$CONC" ] && CONC=$((MEMGB/2)); [ "$CONC" -lt 1 ] && CONC=1; [ "$CONC" -gt 16 ] && CONC=16
-CONC=${CODEX_DEV_CONCURRENCY:-$CONC}; echo "concurrency for this run: $CONC"
 ```
 
 **Dispatch this command as a Bash `run_in_background` job** (NOT `nohup`/detached): `omega run` blocks until the run finishes — omega has no executor daemon by design, the run lives in one process — so when it exits the harness fires a completion notification, which is your cue to go to Step 5. **Don't add `--json`** (it suppresses the `view:` line):
 
 ```bash
-"$OMEGA" run "$WF" --args-file "$ARGSFILE" --concurrency "$CONC" > "$LOG" 2>&1
+"$OMEGA" run "$WF" --args-file "$ARGSFILE" --concurrency 10 > "$LOG" 2>&1
 ```
 
 Right after (foreground; reads the log the background run is writing), capture the dashboard URL and persist the reconnect record:
