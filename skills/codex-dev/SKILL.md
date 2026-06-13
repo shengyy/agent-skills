@@ -40,7 +40,7 @@ Collisions are prevented at dispatch-time orchestration, not patched up afterwar
 
 1. **Independence check**: for each candidate task, estimate the set of files/modules it will touch (from the project's spec docs and existing code structure). Tasks whose file sets are disjoint and have no import/interface coupling may run in the **same run** as parallel agents; any overlap or coupling → split into **separate ordered runs**, or merge into one task.
 2. **Dependency ordering**: B depends on A's output → dispatch B only after A is merged back to the main branch.
-3. **Concurrency cap 3**: codex agents consume API quota + local test resources; keep ≤3 agents running at once.
+3. **Concurrency cap 3**: codex agents consume API quota + local test resources — the dispatch passes `--concurrency 3` (omega's default is 100), so even a larger batch runs at most 3 agents at once.
 4. **Model & reasoning-effort tiers** (set per agent; honor the user's request when named):
 
 | Tier | When | Params |
@@ -143,7 +143,8 @@ RUN_DIR="$REPO_ROOT/.runtime/codex-dev"; mkdir -p "$RUN_DIR"
 BATCH=<batch-name>                               # lowercase kebab-case; the only variable used throughout, so names can't drift
 WF="$RUN_DIR/$BATCH-fanout.workflow.js"          # the workflow above MUST be written to this file
 LOG="$RUN_DIR/$BATCH.log"; RUNJSON="$RUN_DIR/$BATCH-run.json"; ARGSFILE="$RUN_DIR/$BATCH-args.json"
-[ -e "$RUNJSON" ] && { echo "batch name '$BATCH' already used ($RUNJSON exists) — pick a unique BATCH, or remove the old record if that run is done"; exit 1; }   # keep names unique so files/runs never collide
+# refuse if this BATCH is already in use — locally (run.json) OR as an omega run with the same filename (a prior dispatch may have registered before its run.json was written)
+{ [ -e "$RUNJSON" ] || "$OMEGA" runs 2>/dev/null | awk -v f="$BATCH-fanout.workflow.js" '$NF==f{seen=1} END{exit seen?0:1}'; } && { echo "batch name '$BATCH' already in use — pick a unique BATCH"; exit 1; }
 python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"   # persist args; reused verbatim on resume
 [ -s "$ARGSFILE" ] || { echo "ARGS generation failed, stop"; exit 1; }
 ```
@@ -151,7 +152,7 @@ python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"   # pe
 **Dispatch this command as a Bash `run_in_background` job** (NOT `nohup`/detached): `omega run` blocks until the run finishes — omega has no executor daemon by design, the run lives in one process — so when it exits the harness fires a completion notification, which is your cue to go to Step 5. **Don't add `--json`** (it suppresses the `view:` line):
 
 ```bash
-"$OMEGA" run "$WF" --args-file "$ARGSFILE" > "$LOG" 2>&1
+"$OMEGA" run "$WF" --args-file "$ARGSFILE" --concurrency 3 > "$LOG" 2>&1
 ```
 
 Right after (foreground; reads the log the background run is writing), capture the dashboard URL and persist the reconnect record:
@@ -193,6 +194,8 @@ Also write a per-task state file for crash recovery, one per task in the batch �
 ### Completion & reconnect
 
 **You get woken automatically.** Because the dispatch is a Bash `run_in_background` job and `omega run` blocks until the run finishes (omega has **no executor daemon** by design — a run lives and dies with its one process), the harness fires a completion notification when that process exits. That is your cue to proceed to Step 5 — no watcher or polling needed.
+
+**A stuck task surfaces — it does not hang silently.** omega arms a 30-min no-progress watchdog per agent: a stalled turn is failed (`turn_stalled`), its result becomes `null`, the run settles, and `omega run` exits — so within ~30 min a stall becomes an ordinary completion notification carrying a failed task, which you **report by name** ("task X stalled") and then rework or mark `blocked`. The always-printed dashboard/log also lets the user watch a stall live. Residual edge: a wedged `codex app-server` that ignores both interrupt and SIGTERM could keep `omega run` from exiting — so **if the completion notification hasn't arrived well past the watchdog window (~45 min) and the dashboard shows no progress, stop waiting**: run `"$OMEGA" runs` + `tail` the log, report the stuck run to the user, and `"$OMEGA" runs --prune-stale` (or kill its pid) to clear it. Never wait indefinitely.
 
 **If the session died before omega finished** (the background run dies with the session; omega's recovery model is "the run dir is the truth, `--resume` continues"), reconnect from a new session via the persisted record:
 
