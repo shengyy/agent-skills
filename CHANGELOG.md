@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- SVG 仓库横幅 `assets/banner.svg`，展示在 README 顶部。
+- 英文 `README.md`（主）与中文 `README.zh-CN.md`，顶部互相切换。
+
 ## [0.1.0] - 2026-06-13
 
 ### Added

@@ -1,100 +1,105 @@
+![agent-skills](assets/banner.svg)
+
 # agent-skills
 
-> shengyy 的 AI agent skills 合集 —— 给 Claude Code、Codex 等编码 agent 用的可复用技能。
+> Reusable AI agent skills for coding agents like Claude Code and Codex.
+
+**English** | [简体中文](README.zh-CN.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![validate-skills](https://github.com/shengyy/agent-skills/actions/workflows/validate-skills.yml/badge.svg)](https://github.com/shengyy/agent-skills/actions/workflows/validate-skills.yml)
 [![install: npx skills](https://img.shields.io/badge/install-npx%20skills-black)](https://skills.sh/)
 
-遵循通用 [Agent Skills](https://github.com/anthropics/skills) 格式（每个 skill 一个 `SKILL.md`），用 [`skills`](https://www.npmjs.com/package/skills) CLI 一条命令即可安装，跨 Claude Code / Codex / Cursor 等多种 agent 通用。
+Built on the common [Agent Skills](https://github.com/anthropics/skills) format (one `SKILL.md` per skill) and installable with a single [`skills`](https://www.npmjs.com/package/skills) CLI command — works across Claude Code, Codex, Cursor, and other agents.
 
-## 安装
+## Install
 
 ```bash
-# 安装全部 skill（全局，所有项目可用）
+# Install every skill (global — available in all projects)
 npx skills add shengyy/agent-skills -g --all
 
-# 只装某一个
+# Install just one
 npx skills add shengyy/agent-skills -g --skill codex-dev
 
-# 先看看仓库里有哪些 skill（不安装）
+# List the skills in this repo without installing
 npx skills add shengyy/agent-skills -l
 ```
 
-- `-g` 装到用户全局；去掉 `-g` 则只装进**当前项目**的 `.claude/skills/`。
-- 安装后新开一个会话即可生效，在 Claude Code 里用 `/<skill-name>` 或自然语言触发。
-- 更新：`npx skills update -g`；卸载：`npx skills remove -g -s <skill-name>`。
+- `-g` installs to the user-global scope; drop it to install only into the current project's `.claude/skills/`.
+- Open a new session after installing. In Claude Code, trigger with `/<skill-name>` or natural language.
+- Update: `npx skills update -g` · Uninstall: `npx skills remove -g -s <skill-name>`.
 
 ## Available Skills
 
-| Skill | 说明 | 前置依赖 |
+| Skill | What it does | Requires |
 |---|---|---|
-| [`codex-dev`](skills/codex-dev/) | 把开发任务派发给 OpenAI Codex CLI 实施的通用闭环：Claude 出方案写任务书、编排并发、机械验收 + 评审 + 合并提交；codex 在 `workspace-write` 沙箱里写代码。 | `codex` CLI（必需）、`omegacode`（并发轨可选） |
+| [`codex-dev`](skills/codex-dev/) | A full loop for delegating dev tasks to the OpenAI Codex CLI: Claude plans, writes the task brief, orchestrates concurrency, runs mechanical acceptance + review + merge; Codex writes the code in a `workspace-write` sandbox. | `codex` CLI (required), `omegacode` (optional — concurrent track) |
 
 ### codex-dev
 
-派工开发闭环：Claude 负责出方案、写任务书、编排（串行 `codex exec` / 并发 `omegacode` + worktree 物理隔离）、验收评审、合并提交；codex 只负责在沙箱里实施。流程自动推进，只在 BLOCKED、合并冲突需裁决或越权时停下来问人。
+A delegation loop: Claude plans, writes the task brief, orchestrates (serial `codex exec` / concurrent `omegacode` + worktree isolation), reviews, and merges; Codex only implements inside the sandbox. The flow advances automatically and pauses for you only when BLOCKED, when a merge conflict needs a ruling, or when something would cross role boundaries.
 
-**前置依赖**（skill 本身只是编排器，真正干活的工具需自行装好）：
+**Prerequisites** (the skill is only the orchestrator — install the tools that do the real work yourself):
 
 ```bash
-# 1. codex CLI（必需）
+# 1. codex CLI (required)
 npm install -g @openai/codex
 codex login
 
-# 2. omegacode（仅并发轨需要，可选）
+# 2. omegacode (optional — only for the concurrent track)
 npm install -g --prefix ~/.npm-global omegacode
-omegacode doctor   # 验证 codex worker 就绪
+omegacode doctor   # verify the codex worker is ready
 ```
 
-> 沙箱说明：派工命令内部已强制 `-s workspace-write`，不依赖全局默认。若本机 `~/.codex/config.toml` 设了 `danger-full-access`，知悉即可，skill 会显式覆盖。
+> Sandbox note: the delegation commands force `-s workspace-write` internally and don't rely on your global default. If your `~/.codex/config.toml` sets `danger-full-access`, just be aware — the skill overrides it explicitly.
 
 ## Usage
 
 ```bash
-# 安装后，在 Claude Code 会话里：
-/codex-dev 把 src/auth 的登录流程重构成 OAuth
-# 或自然语言："丢给 codex 实现 XXX" / "并发派几个 codex 做 A、B、C"
+# After installing, in a Claude Code session:
+/codex-dev refactor the login flow in src/auth to OAuth
+# or natural language: "hand this to codex" / "fan out a few codex tasks for A, B, C"
 ```
 
-## 仓库结构
+## Repository layout
 
 ```
 agent-skills/
-├── README.md
-├── CONTRIBUTING.md         # 加新 skill 的规范流程
+├── README.md               # English
+├── README.zh-CN.md         # 简体中文
+├── CONTRIBUTING.md         # how to add a new skill
 ├── CHANGELOG.md
 ├── LICENSE
+├── assets/banner.svg
 ├── scripts/
-│   └── validate_skills.py  # 本地 / CI 共用的 SKILL.md 校验
+│   └── validate_skills.py  # SKILL.md validation, shared by local + CI
 ├── .github/
 │   ├── workflows/validate-skills.yml
 │   └── pull_request_template.md
 └── skills/
     └── codex-dev/
-        └── SKILL.md        # 单个自包含 skill（frontmatter: name + description）
+        └── SKILL.md        # a single self-contained skill (frontmatter: name + description)
 ```
 
-每个 skill 自成一个 `skills/<name>/` 目录，至少含一个 `SKILL.md`；如有需要可附 `scripts/`、`references/` 等子目录，随安装一起带走。
+Each skill lives in its own `skills/<name>/` directory with at least a `SKILL.md`; add `scripts/`, `references/`, etc. as needed — they travel with the install.
 
-## 添加新 skill
+## Adding a new skill
 
 ```bash
-# 1. 初始化骨架
+# 1. scaffold
 npx skills init skills/<new-skill-name>
 
-# 2. 编辑 SKILL.md（name 必须等于目录名，description 写清触发场景）
+# 2. edit SKILL.md (name must equal the directory name; description must spell out when to trigger)
 
-# 3. 本地校验
+# 3. validate locally
 python3 scripts/validate_skills.py
 ```
 
-完整规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。提交推送后，任何人都能用
-`npx skills add shengyy/agent-skills -g --skill <new-skill-name>` 装上。
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full conventions. Once pushed, anyone can install it with `npx skills add shengyy/agent-skills -g --skill <new-skill-name>`.
 
-## 贡献
+## Contributing
 
-欢迎提 PR。流程与约定见 [CONTRIBUTING.md](CONTRIBUTING.md)，变更历史见 [CHANGELOG.md](CHANGELOG.md)。
+PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and conventions, and [CHANGELOG.md](CHANGELOG.md) for the history.
 
 ## License
 

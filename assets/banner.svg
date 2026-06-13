@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="agent-skills — reusable AI agent skills for Claude Code, Codex, Cursor">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7c9cff"/>
+      <stop offset="1" stop-color="#56d4a0"/>
+    </linearGradient>
+    <style>
+      .title { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-weight: 700; }
+      .tag   { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .mono  { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="300" rx="20" fill="url(#bg)"/>
+  <rect x="0" y="0" width="8" height="300" fill="url(#accent)"/>
+
+  <!-- terminal dots -->
+  <circle cx="72" cy="64" r="7" fill="#ff5f56"/>
+  <circle cx="96" cy="64" r="7" fill="#ffbd2e"/>
+  <circle cx="120" cy="64" r="7" fill="#27c93f"/>
+
+  <!-- title -->
+  <text x="68" y="150" class="title" font-size="76" fill="#e6edf3">agent-skills</text>
+
+  <!-- tagline -->
+  <text x="72" y="196" class="tag" font-size="26" fill="#9aa7b4">Reusable AI agent skills for Claude Code · Codex · Cursor</text>
+
+  <!-- install pill -->
+  <rect x="72" y="226" width="560" height="46" rx="10" fill="#010409" stroke="#30363d" stroke-width="1"/>
+  <text x="92" y="256" class="mono" font-size="22" fill="#56d4a0">$ <tspan fill="#e6edf3">npx skills add</tspan> <tspan fill="#7c9cff">shengyy/agent-skills</tspan></text>
+
+  <!-- ecosystem chips -->
+  <g class="tag" font-size="18" fill="#9aa7b4">
+    <rect x="980" y="48" width="150" height="34" rx="17" fill="none" stroke="#30363d"/>
+    <text x="1055" y="71" text-anchor="middle">SKILL.md spec</text>
+    <rect x="980" y="96" width="150" height="34" rx="17" fill="none" stroke="#30363d"/>
+    <text x="1055" y="119" text-anchor="middle">MIT licensed</text>
+    <rect x="980" y="144" width="150" height="34" rx="17" fill="none" stroke="#30363d"/>
+    <text x="1055" y="167" text-anchor="middle">CI validated</text>
+  </g>
+</svg>
