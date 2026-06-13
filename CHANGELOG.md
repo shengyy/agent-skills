@@ -15,6 +15,8 @@
 
 ### Changed
 
+- `codex-dev`：SKILL.md 整本翻译为英文（含 `description` 与触发词，指令对 agent 更精确、更通用）；
+  触发改用英文自然语 + `/codex-dev`。代码、流程、技术细节保持不变。
 - `codex-dev`：并发轨新增「后台运行与重连」小节——detached 起跑即落盘
   runId/dashboard/pid，任何新会话（含终端已关）凭 `omega-run.json` +
   `omegacode runs` + `--resume` 重连，不依赖 watcher 进程存活。

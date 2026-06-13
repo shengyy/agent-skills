@@ -1,20 +1,20 @@
 ---
 name: codex-dev
-description: 把开发任务派发给 OpenAI Codex CLI 实施的通用闭环。Claude 出方案写任务书、编排并发（omegacode/worktree 物理隔离）、机械验收 + 评审 + 合并提交；codex 在 workspace-write 沙箱里写代码。用户说"派工"、"丢给 codex"、"codex 实施/开发 <任务>"、"并发派几个 codex"或 /codex-dev 时使用。仅评审/咨询（不写代码）走 gstack-codex，不用本 skill。
+description: Full loop for delegating development tasks to the OpenAI Codex CLI. Claude plans the approach, writes the task brief, orchestrates (serial or concurrent via omegacode + physical worktree isolation), runs mechanical acceptance + review + merge; codex only writes code inside a workspace-write sandbox. Use when the user says "delegate"/"hand it to codex"/"have codex implement|build <task>"/"fan out several codex tasks", or runs /codex-dev. For review/consultation only (no code-writing) use gstack-codex instead, not this skill.
 ---
 
-# /codex-dev — codex 派工开发闭环
+# /codex-dev — delegate-to-codex development loop
 
-分工：Claude 出方案、写任务书、编排、验收评审、合并提交；codex 只实施。整个流程自动推进，只在 BLOCKED、合并冲突需裁决、或突破角色分工时停下来问用户。每个任务状态变化时向用户报一行进度。**派单后把该任务的跟踪地址打印给用户**：并发轨给 omega dashboard 地址，串行轨给 `tail -f` 的 `events.jsonl` 路径。
+Division of labor: Claude plans, writes the task brief, orchestrates, runs acceptance + review + merge; codex only implements. The flow advances on its own and only stops to ask the user when BLOCKED, when a merge conflict needs a ruling, or when something would cross the role boundary. Report a one-line progress update on every task state change. **After dispatching, print the task's tracking address to the user**: the concurrent track gives the omega dashboard URL; the serial track gives the `tail -f` path to its `events.jsonl`.
 
-两条轨道，共享同一套任务书/验收/评审/合并纪律：
+Two tracks, sharing one set of brief / acceptance / review / merge discipline:
 
-| 轨道 | 适用 | 工具 |
+| Track | When | Tool |
 |---|---|---|
-| A 串行 | 单任务，或任务间有依赖 | `codex exec` + `resume <thread_id>`（返工保留会话上下文） |
-| B 并发 | ≥2 个互相独立的任务 | `omegacode` workflow（确定性编排 + watchdog + journal + 实时 dashboard）+ Claude 预建 worktree |
+| A — serial | single task, or tasks with dependencies | `codex exec` + `resume <thread_id>` (rework keeps session context) |
+| B — concurrent | ≥2 mutually independent tasks | `omegacode` workflow (deterministic orchestration + watchdog + journal + live dashboard) + Claude-prebuilt worktrees |
 
-## Step 0：前置检查
+## Step 0: Preflight checks
 
 ```bash
 REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -26,133 +26,133 @@ git -C "$REPO_ROOT" status --porcelain | head -5
 mkdir -p "$REPO_ROOT/.runtime/codex-dev"
 ```
 
-- `CODEX_NOT_FOUND` → 停：`npm install -g @openai/codex`。`AUTH_MISSING` → 停：`codex login`。`PYTHON3_NOT_FOUND` → 停：装 python3（并发轨派单、args/状态落盘都用它）。
-- codex 0.120.0–0.120.2 有 stdin 死锁缺陷 → 警告升级，不阻塞。
-- `$OMEGA` 为空且本次需要并发轨 → **不要自动安装**（用户环境级修改且走网络），把标准全局安装命令给用户确认：`npm install -g omegacode`（装到用户 npm 全局 prefix；若该目录需权限，提示用 sudo 或先 `npm config set prefix <可写目录>` 并把其 `bin` 加进 PATH），同意后再装并跑 `omegacode doctor` 确认 codex worker OK；不同意则退回串行轨逐个跑。
-- **沙箱铁律**：用户 `~/.codex/config.toml` 全局可能是 `sandbox_mode = "danger-full-access"`（桌面版配置）。派工命令必须显式传 `-s workspace-write`（omegacode 侧 `defaultSandbox: "workspace-write"`），永不依赖全局默认；发现漏传视为事故，立即终止重派。
-- `.runtime/`、`.omegacode/`、`.claude/worktrees/` 应在项目 .gitignore 里；不在则补上再开工。
+- `CODEX_NOT_FOUND` → stop: `npm install -g @openai/codex`. `AUTH_MISSING` → stop: `codex login`. `PYTHON3_NOT_FOUND` → stop: install python3 (used by the concurrent track for dispatch and args/state persistence).
+- codex 0.120.0–0.120.2 has a stdin-deadlock bug → warn to upgrade, don't block.
+- `$OMEGA` empty and this run needs the concurrent track → **do NOT auto-install** (env-level change + network); show the standard global-install command for the user to confirm: `npm install -g omegacode` (installs into the user's npm global prefix; if that dir needs permissions, suggest sudo, or `npm config set prefix <writable-dir>` and add its `bin` to PATH), install only after consent then run `omegacode doctor` to confirm the codex worker is OK; if declined, fall back to the serial track one task at a time.
+- **Sandbox iron rule**: the user's global `~/.codex/config.toml` may be `sandbox_mode = "danger-full-access"` (desktop config). Dispatch commands MUST pass `-s workspace-write` explicitly (omegacode side: `defaultSandbox: "workspace-write"`), never relying on the global default; a missing flag is an incident — abort immediately and re-dispatch.
+- `.runtime/`, `.omegacode/`, `.claude/worktrees/` should be in the project's `.gitignore`; if not, add them before starting.
 
-## Step 1：任务分解与档位（防打架第一道闸门）
+## Step 1: Task decomposition & tiers (first anti-collision gate)
 
-并发冲突的根治在派发前的编排，不在事后调解：
+Concurrency collisions are prevented at dispatch-time orchestration, not patched up afterward:
 
-1. **独立性检查**：为每个候选任务预估"将改动的文件/模块集合"（依据项目规约文档与现有代码结构）。任两个任务文件集相交、或存在 import 依赖/接口耦合 → 不得并发，改串行或合并为一个任务。
-2. **依赖排序**：B 依赖 A 的产出 → A 合并回主分支后才派发 B。
-3. **并发上限 3**：codex 任务吃 API 配额 + 本机测试资源，超出排队。
-4. **模型与推理力度分级**（显式传参，不吃全局默认；用户点名时照办）：
+1. **Independence check**: for each candidate task, estimate the set of files/modules it will touch (from the project's spec docs and existing code structure). If any two tasks' file sets intersect, or there's an import dependency / interface coupling → not concurrent; make them serial or merge into one task.
+2. **Dependency ordering**: B depends on A's output → dispatch B only after A is merged back to the main branch.
+3. **Concurrency cap 3**: codex tasks consume API quota + local test resources; queue beyond that.
+4. **Model & reasoning-effort tiers** (pass explicitly, don't rely on global defaults; honor the user's request when named):
 
-| 档位 | 适用 | 参数 |
+| Tier | When | Params |
 |---|---|---|
-| 杂活 | 改配置、机械重构、补文档 | `gpt-5.5` + `medium` |
-| 普通（默认） | 单模块功能、修 bug、补测试 | `gpt-5.5` + `high` |
-| 困难 | 跨模块设计、资金/账务/撮合类核心逻辑、并发与时序、性能 | `gpt-5.5` + `xhigh` |
+| chore | config edits, mechanical refactors, docs | `gpt-5.5` + `medium` |
+| normal (default) | single-module features, bug fixes, adding tests | `gpt-5.5` + `high` |
+| hard | cross-module design, money/accounting/matching core logic, concurrency & timing, performance | `gpt-5.5` + `xhigh` |
 
-档位由 Claude 评估后定，派发进度汇报里注明（如"T9 回填管线 → xhigh"）。
+Claude decides the tier and notes it in the dispatch progress report (e.g. "T9 backfill pipeline → xhigh").
 
-## Step 2：写任务书
+## Step 2: Write the task brief
 
-任务书写到 `$REPO_ROOT/.runtime/codex-dev/<slug>/brief.md`（slug 用任务编号或短英文 kebab-case）。**先读当前项目的 CLAUDE.md / AGENTS.md / 相关规约文档，把项目红线与质量约束提炼进"硬约束"段**——任务书必须自包含，不假设 codex 读过对话历史。
+Write the brief to `$REPO_ROOT/.runtime/codex-dev/<slug>/brief.md` (slug = task id or a short English kebab-case name). **First read the project's CLAUDE.md / AGENTS.md / relevant spec docs and distill the project's red lines and quality constraints into the "Hard constraints" section** — the brief must be self-contained; do not assume codex has read the conversation history.
 
-模板（正文跟随项目语言习惯，代码标识符/路径英文）：
+Template (prose follows the project's language convention; code identifiers/paths in English):
 
 ```markdown
-# 任务：<一句话目标>
+# Task: <one-line goal>
 
-## 目标与验收标准
-- <可机械验证的验收点，逐条>
+## Goals & acceptance criteria
+- <mechanically verifiable acceptance points, one per line>
 
-## 规约依据
-- <项目 spec 文档 §节：关键原文引用，不能只给节号>
-- <任务清单条目原文>
+## Spec basis
+- <project spec doc §section: quote the key text, not just the section number>
+- <verbatim task-list item>
 
-## 环境说明
-- 工作目录是 <主仓库 / 本仓库的独立 worktree>，构建/测试环境已就绪。
-- 禁止安装依赖与任何联网操作（沙箱通常断网，但这是行为红线不是技术兜底）；缺依赖或确需网络时停下，在最终报告里说明，不要绕过。
+## Environment
+- Working directory is <main repo / this repo's dedicated worktree>; build/test env is ready.
+- No installing dependencies and no network operations (the sandbox is usually offline, but this is a behavioral red line, not a technical backstop); if a dependency is missing or network is genuinely needed, stop and explain it in the final report — do not work around it.
 
-## 硬约束
-1. 禁止一切 git 写操作（commit/push/rebase/checkout/stash）。只改工作区文件，版本操作由评审方完成。git 写操作可能被沙箱拦截，属预期，不要重试。
-2. 写入范围仅限 <项目定义的实施方写入白名单；无定义则"本仓库内"，并列出明确禁区>，越界即任务失败。
-3. <从项目 AGENTS.md/CLAUDE.md 提炼的质量约束与红线，逐条>
-4. 新增逻辑必须带测试；自行运行 <项目 lint/test 命令> 通过后才算完成。
+## Hard constraints
+1. No git write operations whatsoever (commit/push/rebase/checkout/stash). Only edit working-tree files; version operations are done by the reviewer. Git writes may be blocked by the sandbox — that's expected, don't retry.
+2. Write scope is limited to <project-defined implementer write-allowlist; if none, "within this repo" plus explicit no-go areas>; going out of scope = task failure.
+3. <quality constraints and red lines distilled from the project's AGENTS.md/CLAUDE.md, one per line>
+4. New logic must come with tests; run <project lint/test command> yourself and pass before considering it done.
 
-## 完成报告要求
-最终消息列出：改动文件清单、新增测试清单、lint/test 运行结果、未尽事项与已知限制。
+## Completion report
+The final message must list: changed-files list, added-tests list, lint/test results, open items and known limitations.
 ```
 
-## Step 3：执行环境（防打架第二道闸门）
+## Step 3: Execution environment (second anti-collision gate)
 
-**默认一个任务一个分支，永不直接在主分支上开发**（用户明确说"就在当前分支改"才例外）。
+**Default to one branch per task; never develop directly on the main branch** (exception only if the user explicitly says "just change it on the current branch").
 
-**主工作区有未提交改动 → 先分类再决定 base**：改动如果正是本任务依赖的基线（用户改到一半让 codex 接力），从主分支开 worktree 会让 codex 基于旧代码开发、合并错位——必须停下来和用户确认（先提交、或以当前状态建任务分支作 base）；改动与任务无关 → 才按下面流程从主分支隔离。
+**Main working tree has uncommitted changes → classify before choosing the base**: if those changes ARE the baseline this task depends on (the user got halfway and wants codex to continue), opening a worktree off the main branch would make codex build on stale code and misalign the merge — you MUST stop and confirm with the user (commit first, or build the task branch on the current state as base); if the changes are unrelated to the task → then isolate off the main branch per the flow below.
 
-**单任务且工作区干净** → 主工作区直接建任务分支跑（省 worktree 与环境重建开销）：
+**Single task and clean working tree** → create the task branch in the main working tree directly (saves worktree + env-rebuild overhead):
 
 ```bash
-git -C "$REPO_ROOT" checkout -b "codex/$SLUG"   # 派工期间主工作区归该任务
+git -C "$REPO_ROOT" checkout -b "codex/$SLUG"   # the main working tree belongs to this task during dispatch
 ```
 
-**并发任务，或工作区脏（无关改动）** → 每任务一个 worktree，物理隔离。同工作区并发必然互踩：git 状态无法归属、测试缓存冲突、返工时 codex 看到他人改动会"顺手修复"。约定不可靠，隔离才可靠：
+**Concurrent tasks, or a dirty working tree (unrelated changes)** → one worktree per task, physical isolation. Concurrency in the same working tree inevitably collides: git status can't be attributed, test caches conflict, and on rework codex will "helpfully fix" others' changes it sees. Conventions are unreliable; isolation is reliable:
 
 ```bash
 SLUG=<slug>
 WT="$REPO_ROOT/.claude/worktrees/codex-$SLUG"
-git -C "$REPO_ROOT" worktree add "$WT" -b "codex/$SLUG" <主分支>
+git -C "$REPO_ROOT" worktree add "$WT" -b "codex/$SLUG" <main-branch>
 ```
 
-然后**按项目构建方式在 worktree 里重建环境**（codex 沙箱断网，环境必须 Claude 预装）。Python 项目警告：若主仓库 venv 内项目是 editable 安装（site-packages 有 `__editable__*.pth`），其路径硬编码指向主仓库——worktree **必须全新建 venv 重装**，共享或复制会让测试跑到主仓库代码：
+Then **rebuild the environment inside the worktree per the project's build method** (codex's sandbox is offline; the env must be pre-installed by Claude). Python caveat: if the project inside the main repo's venv is an editable install (site-packages has `__editable__*.pth`), its path is hard-coded to the main repo — the worktree **must build a fresh venv and reinstall**; sharing or copying makes tests run against the main-repo code:
 
 ```bash
 python3 -m venv "$WT/<pkg>/.venv" && "$WT/<pkg>/.venv/bin/pip" install -q -e "$WT/<pkg>[dev]"
 ```
 
-最后在 worktree 里跑一遍项目 lint/test：**基线必须绿**，红着派工无法归因；基线红 → 先修主分支，不派工。
+Finally run the project's lint/test once inside the worktree: **the baseline must be green** — dispatching on red makes failures unattributable; if the baseline is red → fix the main branch first, don't dispatch.
 
-## Step 4A：串行轨（codex exec）
+## Step 4A: Serial track (codex exec)
 
 ```bash
 RUN="$REPO_ROOT/.runtime/codex-dev/$SLUG"; WORK=${WT:-$REPO_ROOT}
 codex exec -s workspace-write \
   -C "$WORK" \
-  -m gpt-5.5 -c 'model_reasoning_effort="<档位>"' \
+  -m gpt-5.5 -c 'model_reasoning_effort="<tier>"' \
   --json -o "$RUN/report.md" \
   "$(cat "$RUN/brief.md")" \
   </dev/null 2>"$RUN/stderr.log" > "$RUN/events.jsonl"
 ```
 
-派单后把跟踪地址打印给用户：`tail -f "$RUN/events.jsonl"`（事件流逐步更新）。
+After dispatching, print the tracking address to the user: `tail -f "$RUN/events.jsonl"` (event stream, updates incrementally).
 
-执行雷区（违反即翻车）：
+Execution minefield (violate and it crashes):
 
-- **stdin 必须 `</dev/null`**：codex 总是读 stdin，不关闭就永久阻塞（症状：零输出、零 CPU、貌似挂起）。**管道陷阱**：`echo "..." | codex ... </dev/null` 里 `</dev/null` 会覆盖管道，codex 收到空输入——prompt 一律走位置参数，永不走管道。
-- 思考 token 走 stderr，落盘到 `$RUN/stderr.log`（不要丢 /dev/null，排障要用；最终汇报只摘关键错误，不直接外传内容）。
-- codex **无中间输出**：进程被提前杀掉时 `report.md` 为空且不报错。空文件 = 超时/被杀，不是"没改东西"。
-- 用 Bash `run_in_background` 跑；超时按档位：medium 300s / high 600s / xhigh 1200s。预计超 15 分钟的任务先拆小。
-- `-C` 指向仓库根（或 worktree 根）时整个目录可写——目录级白名单靠 Step 5 越界检查兜底。`workspace-write` 通常默认断网，但**不要把"无网络"当成技术保证**（config 可覆盖）——联网禁令以任务书行为约束为准。
+- **stdin must be `</dev/null`**: codex always reads stdin; not closing it blocks forever (symptom: zero output, zero CPU, looks hung). **Pipe trap**: in `echo "..." | codex ... </dev/null`, the `</dev/null` overrides the pipe and codex gets empty input — always pass the prompt as a positional arg, never via a pipe.
+- Thinking tokens go to stderr, persisted to `$RUN/stderr.log` (don't drop to /dev/null — needed for debugging; in the final report only summarize key errors, don't forward the content verbatim).
+- codex has **no intermediate output**: if the process is killed early, `report.md` is empty with no error. Empty file = timeout/killed, not "nothing changed".
+- Run via Bash `run_in_background`; timeout by tier: medium 300s / high 600s / xhigh 1200s. Split tasks expected to exceed 15 min.
+- When `-C` points at the repo root (or worktree root) the whole dir is writable — the directory-level allowlist is backstopped by the Step 5 out-of-scope check. `workspace-write` is usually offline by default, but **don't treat "no network" as a technical guarantee** (config can override) — the network ban is enforced by the brief's behavioral constraint.
 
-派发后立即写 `$RUN/state.json`（崩溃恢复用）：
+Right after dispatch, write `$RUN/state.json` (for crash recovery):
 
 ```json
 {"slug":"...","phase":"dispatched|accepted|rework-N|merged|failed|blocked",
  "track":"exec|omega","thread_id":"...","worktree":"...","branch":"...","tier":"high"}
 ```
 
-完成后取会话 id 与用量（返工必用；**严禁 `resume --last`**，并发或多会话时会指错）：
+On completion, grab the session id and usage (required for rework; **never `resume --last`** — it points wrong under concurrency or multiple sessions):
 
 ```bash
 THREAD_ID=$(head -1 "$RUN/events.jsonl" | grep -o '"thread_id":"[^"]*"' | cut -d'"' -f4)
 grep '"type":"turn.completed"' "$RUN/events.jsonl" | tail -1
 ```
 
-失败隔离：非零退出或 events 为空 → 先读 `$RUN/stderr.log` 定位（auth、限流、版本缺陷），可修则修后重跑一次；连续两次失败 → 标 `failed`，不拖垮其他任务，汇总时报告。
+Failure isolation: non-zero exit or empty events → first read `$RUN/stderr.log` to localize (auth, rate-limit, version bug); fix and rerun once if fixable; two consecutive failures → mark `failed`, don't drag down other tasks, report at the summary.
 
-## Step 4B：并发轨（omegacode）
+## Step 4B: Concurrent track (omegacode)
 
-前提：各任务 worktree 与环境已按 Step 3 备好。**先给本批起一个名字 `BATCH`**（小写 kebab-case，如 `oauth-migration`）——workflow、日志、状态、args 全用它做前缀，**只定这一次、全程复用同一个变量，名字就不会对不上**。把下面的 workflow 写到 `$RUN_DIR/$BATCH-fanout.workflow.js`（omega 看板按文件名显示 run，一眼认出是哪批；`-fanout.workflow.js` 后缀固定，标明是编排脚本）：
+Prerequisite: each task's worktree and env are ready per Step 3. **First pick a name `BATCH` for this batch** (lowercase kebab-case, e.g. `oauth-migration`) — the workflow, log, state, and args all use it as prefix; **set it once and reuse the same variable throughout so names can't drift apart**. Write the workflow below to `$RUN_DIR/$BATCH-fanout.workflow.js` (omega shows the run on the dashboard by filename, so you can tell which batch at a glance; the `-fanout.workflow.js` suffix is fixed, marking it the orchestration script):
 
 ```js
 export const meta = {
   name: "codex-dev-fanout",
-  description: "并发派工：每任务一个 codex agent，在预建 worktree 内实施",
+  description: "Concurrent dispatch: one codex agent per task, implementing inside its prebuilt worktree",
   defaultProvider: "codex", defaultModel: "gpt-5.5",
   defaultSandbox: "workspace-write",
   phases: [{ title: "Implement" }],
@@ -172,133 +172,133 @@ return await parallel(args.tasks.map((t) => () =>
 ))
 ```
 
-调用（`tasks[].brief` 传任务书全文）。**后台 detached 起跑，并把可重连的真相落盘**——omega 是 nohup detached 进程，本会话/终端关掉它照样在后台跑（优点：不占会话），但正因如此，起跑就要记下 runId / dashboard / pid，断了才找得回（见下「后台运行与重连」）：
+Invoke (`tasks[].brief` carries the full brief text). **Launch detached in the background and persist the reconnect truth** — omega is an nohup-detached process; closing this session/terminal leaves it running (upside: doesn't occupy the session), but exactly for that reason record the runId / dashboard / pid at launch so you can find it again if disconnected (see "Background runs & reconnect" below):
 
 ```bash
 RUN_DIR="$REPO_ROOT/.runtime/codex-dev"; mkdir -p "$RUN_DIR"
-BATCH=<本批名字>                                  # 小写 kebab-case；下面全程只用这一个变量，名字不会对不上
-WF="$RUN_DIR/$BATCH-fanout.workflow.js"          # 上面的 workflow 必须写到这个文件
+BATCH=<batch-name>                               # lowercase kebab-case; the only variable used throughout, so names can't drift
+WF="$RUN_DIR/$BATCH-fanout.workflow.js"          # the workflow above MUST be written to this file
 LOG="$RUN_DIR/$BATCH.log"; RUNJSON="$RUN_DIR/$BATCH-run.json"; ARGSFILE="$RUN_DIR/$BATCH-args.json"
 
-python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"     # args 落盘，resume 时原样复用
-[ -s "$ARGSFILE" ] || { echo "ARGS 生成失败，停"; exit 1; }
+python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"     # persist args; reused verbatim on resume
+[ -s "$ARGSFILE" ] || { echo "ARGS generation failed, stop"; exit 1; }
 
-nohup "$OMEGA" run "$WF" --args-file "$ARGSFILE" >"$LOG" 2>&1 &     # 用 --args-file（resume 才能带回原 args）；**别加 --json**（会抑制 view: 行）
+nohup "$OMEGA" run "$WF" --args-file "$ARGSFILE" >"$LOG" 2>&1 &     # use --args-file (so resume can replay the original args); **don't add --json** (it suppresses the view: line)
 OMEGA_PID=$!
 
-for _ in $(seq 1 20); do          # omega 起跑即把 view URL 写进日志，从中解析本次 run 地址（含真实端口）
+for _ in $(seq 1 20); do          # omega writes the view URL to the log at startup; parse this run's address (with the real port) from it
   VIEW=$(grep -oE 'http://127\.0\.0\.1:[0-9]+/#/run/wf_[0-9a-f]+' "$LOG" | head -1)
   [ -n "$VIEW" ] && break; sleep 0.5
 done
-[ -n "$VIEW" ] || { echo "omega 没起来（10s 内无 view: 行），看 $LOG："; tail -20 "$LOG"; exit 1; }   # 硬停，不写空记录
+[ -n "$VIEW" ] || { echo "omega didn't come up (no view: line within 10s), check $LOG:"; tail -20 "$LOG"; exit 1; }   # hard stop, don't write an empty record
 
-python3 - "$VIEW" "$OMEGA_PID" "$WF" "$LOG" "$ARGSFILE" "$RUNJSON" <<'PY'   # python 安全生成 JSON（路径含特殊字符也不坏）
+python3 - "$VIEW" "$OMEGA_PID" "$WF" "$LOG" "$ARGSFILE" "$RUNJSON" <<'PY'   # build JSON safely with python (won't break on special chars in paths)
 import json,sys
 v,pid,wf,log,af,out=sys.argv[1:7]
 json.dump({"runId":v.rsplit("/",1)[-1],"pid":int(pid),"dashboard":v,"workflow":wf,"log":log,"argsFile":af}, open(out,"w"))
 PY
-echo "▶ omega dashboard: $VIEW"   # 派单后把这个地址打印给用户
+echo "▶ omega dashboard: $VIEW"   # after dispatch, print this address to the user
 ```
 
-- **把 dashboard 地址（`$VIEW`）打印给用户**——只读 web 看板，实时看各 codex 的 phase / 进度 / token；是完整 per-run 地址（带 `/#/run/<runId>`），多次派单也认得对那个。
-- 关键设计：**不用 omegacode 的 `worktree:` 选项**（它自建 worktree 时 Claude 插不进装环境这步），用 `cwd:` 指向预建 worktree——omegacode 纯做确定性编排（并发调度、30 分钟无进展 watchdog、journal、token 统计），worktree 生命周期归 Claude。
-- 它经 `codex app-server` JSON-RPC 驱动 codex，串行轨的 stdin/超时雷区不适用。
-- runId 起跑时就由 omega 写进 `omega-run.log` 的 `view:` 行（上面已解析落盘，含真实端口）；完成后从 `omega-run.log` 或 `~/.omegacode/runs/<runId>/` 读结构化结果。
-- 单个 agent 失败在结果数组里是 null/failed 状态——只打回该任务，不影响其余。
-- 附加玩法（用户点名才用）：困难任务可跑内置 `bake-off`（codex 与 claude-code 在隔离 worktree 各自实现，盲评出胜者）或 `multi-provider-review`（双模型独立评审再合成）。
+- **Print the dashboard address (`$VIEW`) to the user** — a read-only web board to watch each codex's phase / progress / token use live; it's the full per-run URL (with `/#/run/<runId>`), so it stays unambiguous across multiple dispatches.
+- Key design: **don't use omegacode's `worktree:` option** (when it builds its own worktree, Claude can't inject the env-setup step); use `cwd:` pointing at the prebuilt worktree — omegacode does pure deterministic orchestration (concurrency scheduling, 30-min no-progress watchdog, journal, token stats), and the worktree lifecycle belongs to Claude.
+- It drives codex over `codex app-server` JSON-RPC; the serial track's stdin/timeout minefield doesn't apply.
+- The runId is written by omega into the `view:` line of the log at startup (parsed and persisted above, with the real port); on completion read the structured result from the log or `~/.omegacode/runs/<runId>/`.
+- A single failed agent shows as null/failed in the results array — rework only that task, the rest are unaffected.
+- Extras (only when the user asks): hard tasks can run the built-in `bake-off` (codex and claude-code each implement in isolated worktrees, blind-judged for a winner) or `multi-provider-review` (two models review independently, then synthesize).
 
-### 后台运行与重连
+### Background runs & reconnect
 
-omega 起跑后是 detached 进程，会话/终端关掉它仍在后台跑。这是并发轨的核心优点（不占会话），但要求**真相落盘、绝不依赖某个 watcher 进程活着**——否则会话一死就只剩孤儿 run、没人通知，下次进来又得满世界找它。
+After launch omega is a detached process; closing the session/terminal leaves it running. This is the concurrent track's core strength (doesn't occupy the session), but it requires **persisting the truth to disk and never depending on some watcher process staying alive** — otherwise once the session dies you're left with an orphan run, no notification, and a hunt to find it next time.
 
-- **真相来源**（断会话也在）：`$RUN_DIR/<BATCH>-run.json`（runId / dashboard / pid / workflow / argsFile，**每批独立、不互相覆盖**）+ omega 自身的 `~/.omegacode/runs/<runId>/` journal。
-- **watcher 是可选的即时提醒**：在线时可另起后台轮询 `"$OMEGA" runs`、结束时通知用户；但它只是锦上添花，**不是真相来源**，死了不影响重连。
-- **任何新会话重连**（哪怕原终端已关）：
+- **Source of truth** (survives session death): `$RUN_DIR/<BATCH>-run.json` (runId / dashboard / pid / workflow / argsFile, **per-batch, never overwriting each other**) + omega's own `~/.omegacode/runs/<runId>/` journal.
+- **A watcher is an optional live notifier**: while online you can spin up a background poller of `"$OMEGA" runs` and notify the user on completion; but it's a nice-to-have, **not the source of truth** — if it dies, reconnect still works.
+- **Reconnect from any new session** (even if the original terminal is closed):
 
   ```bash
-  OMEGA=$(command -v omegacode) || { echo "omegacode 不在 PATH → 先 npm install -g omegacode"; exit 1; }   # 找不到就停，别用空命令往下跑
+  OMEGA=$(command -v omegacode) || { echo "omegacode not on PATH → first npm install -g omegacode"; exit 1; }   # stop if not found, don't run on with an empty command
   RUN_DIR="$(git rev-parse --show-toplevel)/.runtime/codex-dev"
-  ls "$RUN_DIR"/*-run.json                        # 列出各批记录，挑要恢复的那批
+  ls "$RUN_DIR"/*-run.json                         # list each batch's record, pick the one to recover
   RUNJSON="$RUN_DIR/<BATCH>-run.json"
-  J() { python3 -c "import json,sys;print(json.load(open('$RUNJSON'))[sys.argv[1]])" "$1"; }   # 安全读字段（含空格/特殊字符也行）
-  echo "dashboard: $(J dashboard)"                # 把地址打印给用户
-  "$OMEGA" runs                                   # 还在跑？看 status / agents 数
-  # 续跑（run 会自动拉起看板并重印 view: 行）；**必须带回原 --args-file**，否则 args precondition mismatch：
+  J() { python3 -c "import json,sys;print(json.load(open('$RUNJSON'))[sys.argv[1]])" "$1"; }   # read fields safely (handles spaces/special chars)
+  echo "dashboard: $(J dashboard)"                 # print the address to the user
+  "$OMEGA" runs                                    # still running? check status / agent count
+  # resume (run auto-starts the board and re-prints the view: line); **must replay the original --args-file**, or args precondition mismatch:
   "$OMEGA" run "$(J workflow)" --args-file "$(J argsFile)" --resume "$(J runId)"
-  # 只想看不续跑：后台起看板再开上面 dashboard 地址（前台 serve 会阻塞）： "$OMEGA" serve >/dev/null 2>&1 &
+  # only want to watch, not resume: start the board in the background then open the dashboard URL above (a foreground serve blocks): "$OMEGA" serve >/dev/null 2>&1 &
   ```
 
-- 收尾后清理：`"$OMEGA" runs --prune-stale` 清掉已死的 run。
+- Cleanup when done: `"$OMEGA" runs --prune-stale` clears dead runs.
 
-## Step 5：机械验收（每任务独立；任一失败 → Step 7 打回）
+## Step 5: Mechanical acceptance (per task; any failure → Step 7 rework)
 
-1. **越界检查**（沙箱只隔离 worktree 之间，不隔离其内部目录，事后校验是硬闸门）：
+1. **Out-of-scope check** (the sandbox only isolates between worktrees, not within one; post-hoc verification is the hard gate):
 
 ```bash
-git -C "$WORK" status --porcelain | cut -c4- | grep -vE '^(<项目写入白名单正则>)' || echo SCOPE_OK
+git -C "$WORK" status --porcelain | cut -c4- | grep -vE '^(<project write-allowlist regex>)' || echo SCOPE_OK
 ```
 
-越界文件：已跟踪 `git -C "$WORK" checkout -- <file>` 还原，未跟踪删除，打回意见中点名。
+Out-of-scope files: tracked → restore with `git -C "$WORK" checkout -- <file>`, untracked → delete, and name them in the rework notes.
 
-2. **lint + test**：在 `$WORK` 里跑项目命令，失败输出原样留作打回材料。
-3. codex 的完成报告（report.md / 结构化 REPORT）只当线索，**不当结论**。
+2. **lint + test**: run the project commands in `$WORK`; keep failing output verbatim as rework material.
+3. codex's completion report (report.md / structured REPORT) is only a lead, **not a conclusion**.
 
-## Step 6：评审（Claude 亲自做，不得委托回 codex）
+## Step 6: Review (Claude does it personally; must not delegate back to codex)
 
-对 `git -C "$WORK" diff` + 新增文件逐项过：
+Go through `git -C "$WORK" diff` + new files item by item:
 
-- 项目评审清单（从项目 CLAUDE.md 提炼，如本仓库的"撮合规则逐条对应 / agentio 时间闸门无泄漏 / journal 只插不改"三件事）。
-- 项目红线扫描（如自动化路径禁 `dry_run=false`）；无静默 fallback / 吞异常 / 捏造默认值。
-- 质量阈值（如 AGENTS.md 的文件/函数行数、禁泛名模块）。
-- 任务书验收标准逐条对照实现与测试；缺测试 = 未完成。
+- Project review checklist (distilled from the project's CLAUDE.md, e.g. this repo's three: "matching rules each map through / agentio time-gate no leak / journal insert-only").
+- Project red-line scan (e.g. automation paths forbid `dry_run=false`); no silent fallback / swallowed exceptions / fabricated defaults.
+- Quality thresholds (e.g. AGENTS.md's file/function line limits, no generic-name modules).
+- Check the implementation and tests against each acceptance criterion in the brief; missing tests = not done.
 
-独立判断：关键断言到代码里核实，不轻信 codex 的自我声明。
+Independent judgment: verify key assertions in the code; don't take codex's self-report at face value.
 
-## Step 7：打回返工（每任务最多 3 轮）
+## Step 7: Rework (≤3 rounds per task)
 
-评审意见写到 `$RUN/rework-brief.md`：逐条"问题、位置 file:line、期望行为、引用的规约条目"；若评审方动过工作区（如还原越界文件），明确告知。**评审意见一律走位置参数**——`echo "..." | codex ... </dev/null` 的 `</dev/null` 会覆盖管道，codex 收到的是空输入。
+Write review notes to `$RUN/rework-brief.md`: one per line "issue, location file:line, expected behavior, cited spec item"; if the reviewer touched the working tree (e.g. restored out-of-scope files), state it clearly. **Review notes always go through a positional arg** — in `echo "..." | codex ... </dev/null` the `</dev/null` overrides the pipe and codex gets empty input.
 
-- 串行轨（resume 保留原会话上下文；resume 子命令没有 `-s`/`-C` flag，沙箱继承行为不赌——用 `-c` 显式钉死）：
+- Serial track (resume keeps the original session context; the resume subcommand has no `-s`/`-C` flag — don't gamble on inherited sandbox behavior, pin it explicitly with `-c`):
 
 ```bash
 codex exec resume "$THREAD_ID" -c 'sandbox_mode="workspace-write"' --json \
   "$(cat "$RUN/rework-brief.md")" </dev/null 2>"$RUN/stderr-rework-<N>.log" > "$RUN/rework-<N>.jsonl"
 ```
 
-resume 找不到会话或 cwd 不符 → 退回新会话（同并发轨命令，`-C` 指向原工作目录）。
+resume can't find the session or cwd mismatch → fall back to a new session (same as the concurrent-track command, `-C` pointing at the original working dir).
 
-- 并发轨（worktree 内起新会话，工作区状态就是上下文）：
+- Concurrent track (start a new session inside the worktree; the working-tree state is the context):
 
 ```bash
-codex exec -s workspace-write -C "$WT" -m gpt-5.5 -c 'model_reasoning_effort="<原档位>"' \
+codex exec -s workspace-write -C "$WT" -m gpt-5.5 -c 'model_reasoning_effort="<original-tier>"' \
   --json "$(cat "$RUN/rework-brief.md")" </dev/null 2>"$RUN/stderr-rework-<N>.log" > "$RUN/rework-<N>.jsonl"
 ```
 
-每轮返工后回到 Step 5。3 轮不过 → 标 `blocked`，停该任务，向用户汇报：尝试过什么、卡在哪、两条出路（人工介入 / Claude 直接修——后者突破角色分工，须用户点头）。
+After each rework round return to Step 5. 3 rounds without passing → mark `blocked`, stop that task, report to the user: what was tried, where it's stuck, two ways out (human intervention / Claude fixes it directly — the latter crosses the role boundary and needs the user's nod).
 
-## Step 8：合并与提交（全局唯一串行点）
+## Step 8: Merge & commit (the single global serialization point)
 
-评审通过的任务逐个合并，**一次只合一个**（codex 永不碰 git）。单任务主工作区分支模式：在 `codex/$SLUG` 分支上提交（同第 2 条纪律）→ 切回原分支 `merge --ff-only` → 删任务分支，不涉及 worktree 步骤。worktree 模式走完整流程：
+Merge passed tasks one at a time, **only one at a time** (codex never touches git). Single-task main-working-tree branch mode: commit on the `codex/$SLUG` branch (same as discipline #2) → switch back to the original branch and `merge --ff-only` → delete the task branch, no worktree steps. Worktree mode runs the full flow:
 
-1. 把最新主分支合进任务分支并复验——保证"组合后"依然成立（integration 验证）：
+1. Merge the latest main branch into the task branch and re-verify — ensure it still holds "after combining" (integration check):
 
 ```bash
-git -C "$WT" merge <主分支>   # 简单冲突 Claude 直接解；语义冲突打回该任务（告知 base 已变）；拿不准 → 问用户
-(cd "$WT" && <项目 lint/test 命令>)
+git -C "$WT" merge <main-branch>   # simple conflicts: Claude resolves directly; semantic conflicts: rework that task (tell it the base moved); unsure → ask the user
+(cd "$WT" && <project lint/test command>)
 ```
 
-2. 在任务分支上提交：只 `git add` 本任务相关文件，永不 `git add -A`；项目有结构自检脚本的，add 后跑一遍；提交信息遵循项目惯例。
-3. 回主分支合并并清理：
+2. Commit on the task branch: only `git add` files for this task, never `git add -A`; if the project has a structure self-check script, run it after add; follow the project's commit-message convention.
+3. Merge back to the main branch and clean up:
 
 ```bash
 git -C "$REPO_ROOT" merge --ff-only "codex/$SLUG" || git -C "$REPO_ROOT" merge --no-ff "codex/$SLUG"
 git -C "$REPO_ROOT" worktree remove "$WT" && git -C "$REPO_ROOT" branch -d "codex/$SLUG"
 ```
 
-4. 更新 `state.json` 为 `merged`；依赖此产出的后续任务此刻才可派发。
+4. Update `state.json` to `merged`; downstream tasks depending on this output can only be dispatched now.
 
-全部收口后统一汇报：每任务档位与返工轮次、改动文件与测试结果、commit hash、token 用量（exec 轨汇总 events.jsonl 的 `turn.completed`，omega 轨用其 usage 统计）、failed/blocked 原因与建议、任务清单状态更新建议。
+After everything is wrapped up, report together: each task's tier and rework rounds, changed files and test results, commit hashes, token usage (serial track: sum events.jsonl's `turn.completed`; omega track: use its usage stats), failed/blocked reasons and suggestions, task-list status update suggestions.
 
-## 恢复协议
+## Recovery protocol
 
-会话中断后再进入：扫 `$REPO_ROOT/.runtime/codex-dev/*/state.json` 按 phase 续跑（`dispatched` 且 events 无 `turn.completed` → 查 codex 进程是否还在；`rework-N` → 重新验收；`accepted` → 进合并）。omega 轨读 `.runtime/codex-dev/<BATCH>-run.json` 拿 runId/dashboard/argsFile，`"$OMEGA" runs` 看是否在跑，`run <workflow> --args-file <argsFile> --resume <runId>` 续跑未完成部分（resume 必带回原 args，否则 precondition mismatch；详见「后台运行与重连」）。worktree 与 thread_id 都在状态文件里，无需重派。
+Re-entering after a session interruption: scan `$REPO_ROOT/.runtime/codex-dev/*/state.json` and continue by phase (`dispatched` with no `turn.completed` in events → check whether the codex process is still alive; `rework-N` → re-run acceptance; `accepted` → go to merge). For the omega track, read `.runtime/codex-dev/<BATCH>-run.json` for runId/dashboard/argsFile, `"$OMEGA" runs` to see if it's still running, `run <workflow> --args-file <argsFile> --resume <runId>` to continue the unfinished part (resume must replay the original args, or precondition mismatch; see "Background runs & reconnect"). Worktrees and thread_ids are all in the state files, no re-dispatch needed.
