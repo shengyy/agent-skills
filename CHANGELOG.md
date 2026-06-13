@@ -15,6 +15,9 @@
 
 ### Changed
 
+- `codex-dev`：并发轨改用 Bash `run_in_background` 跑 omega（不再 nohup detached）——omega 无 executor daemon、
+  `run` 阻塞至完成（已对 omegacode 源码 + DESIGN.md 验证），进程退出即由 harness 通知 Claude 推进验收，
+  与串行轨同机制、免 watcher；会话中途挂掉的场景由 `<BATCH>-run.json` + `--resume` 接管。
 - `codex-dev`：SKILL.md 整本翻译为英文（含 `description` 与触发词，指令对 agent 更精确、更通用）；
   触发改用英文自然语 + `/codex-dev`。代码、流程、技术细节保持不变。
 - `codex-dev`：并发轨新增「后台运行与重连」小节——detached 起跑即落盘

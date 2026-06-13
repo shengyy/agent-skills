@@ -172,32 +172,37 @@ return await parallel(args.tasks.map((t) => () =>
 ))
 ```
 
-Invoke (`tasks[].brief` carries the full brief text). **Launch detached in the background and persist the reconnect truth** — omega is an nohup-detached process; closing this session/terminal leaves it running (upside: doesn't occupy the session), but exactly for that reason record the runId / dashboard / pid at launch so you can find it again if disconnected (see "Background runs & reconnect" below):
+Invoke (`tasks[].brief` carries the full brief text). First set per-batch names and write the args:
 
 ```bash
 RUN_DIR="$REPO_ROOT/.runtime/codex-dev"; mkdir -p "$RUN_DIR"
 BATCH=<batch-name>                               # lowercase kebab-case; the only variable used throughout, so names can't drift
 WF="$RUN_DIR/$BATCH-fanout.workflow.js"          # the workflow above MUST be written to this file
 LOG="$RUN_DIR/$BATCH.log"; RUNJSON="$RUN_DIR/$BATCH-run.json"; ARGSFILE="$RUN_DIR/$BATCH-args.json"
-
-python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"     # persist args; reused verbatim on resume
+python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"   # persist args; reused verbatim on resume
 [ -s "$ARGSFILE" ] || { echo "ARGS generation failed, stop"; exit 1; }
+```
 
-nohup "$OMEGA" run "$WF" --args-file "$ARGSFILE" >"$LOG" 2>&1 &     # use --args-file (so resume can replay the original args); **don't add --json** (it suppresses the view: line)
-OMEGA_PID=$!
+**Dispatch this command as a Bash `run_in_background` job** (NOT `nohup`/detached): `omega run` blocks until the whole batch finishes — omega has no executor daemon by design, the run lives in one process — so when it exits the harness fires a completion notification, which is your cue to go to Step 5 (same mechanism as the serial track). **Don't add `--json`** (it suppresses the `view:` line):
 
-for _ in $(seq 1 20); do          # omega writes the view URL to the log at startup; parse this run's address (with the real port) from it
+```bash
+"$OMEGA" run "$WF" --args-file "$ARGSFILE" > "$LOG" 2>&1
+```
+
+Right after (foreground; reads the log the background run is writing), capture the dashboard URL and persist the reconnect record:
+
+```bash
+for _ in $(seq 1 20); do          # omega writes the view URL to the log at startup; parse this run's address (real port included)
   VIEW=$(grep -oE 'http://127\.0\.0\.1:[0-9]+/#/run/wf_[0-9a-f]+' "$LOG" | head -1)
   [ -n "$VIEW" ] && break; sleep 0.5
 done
 [ -n "$VIEW" ] || { echo "omega didn't come up (no view: line within 10s), check $LOG:"; tail -20 "$LOG"; exit 1; }   # hard stop, don't write an empty record
-
-python3 - "$VIEW" "$OMEGA_PID" "$WF" "$LOG" "$ARGSFILE" "$RUNJSON" <<'PY'   # build JSON safely with python (won't break on special chars in paths)
+python3 - "$VIEW" "$WF" "$LOG" "$ARGSFILE" "$RUNJSON" <<'PY'   # build JSON safely with python (won't break on special chars in paths)
 import json,sys
-v,pid,wf,log,af,out=sys.argv[1:7]
-json.dump({"runId":v.rsplit("/",1)[-1],"pid":int(pid),"dashboard":v,"workflow":wf,"log":log,"argsFile":af}, open(out,"w"))
+v,wf,log,af,out=sys.argv[1:6]
+json.dump({"runId":v.rsplit("/",1)[-1],"dashboard":v,"workflow":wf,"log":log,"argsFile":af}, open(out,"w"))
 PY
-echo "▶ omega dashboard: $VIEW"   # after dispatch, print this address to the user
+echo "▶ omega dashboard: $VIEW"   # print this address to the user
 ```
 
 - **Print the dashboard address (`$VIEW`) to the user** — a read-only web board to watch each codex's phase / progress / token use live; it's the full per-run URL (with `/#/run/<runId>`), so it stays unambiguous across multiple dispatches.
@@ -207,12 +212,13 @@ echo "▶ omega dashboard: $VIEW"   # after dispatch, print this address to the 
 - A single failed agent shows as null/failed in the results array — rework only that task, the rest are unaffected.
 - Extras (only when the user asks): hard tasks can run the built-in `bake-off` (codex and claude-code each implement in isolated worktrees, blind-judged for a winner) or `multi-provider-review` (two models review independently, then synthesize).
 
-### Background runs & reconnect
+### Completion & reconnect
 
-After launch omega is a detached process; closing the session/terminal leaves it running. This is the concurrent track's core strength (doesn't occupy the session), but it requires **persisting the truth to disk and never depending on some watcher process staying alive** — otherwise once the session dies you're left with an orphan run, no notification, and a hunt to find it next time.
+**You get woken automatically.** Because the dispatch is a Bash `run_in_background` job and `omega run` blocks until the batch finishes (omega has **no executor daemon** by design — a run lives and dies with its one process), the harness fires a completion notification when that process exits. That is your cue to proceed to Step 5 — no watcher or polling needed.
 
-- **Source of truth** (survives session death): `$RUN_DIR/<BATCH>-run.json` (runId / dashboard / pid / workflow / argsFile, **per-batch, never overwriting each other**) + omega's own `~/.omegacode/runs/<runId>/` journal.
-- **A watcher is an optional live notifier**: while online you can spin up a background poller of `"$OMEGA" runs` and notify the user on completion; but it's a nice-to-have, **not the source of truth** — if it dies, reconnect still works.
+**If the session died before omega finished** (the background run dies with the session; omega's recovery model is "the run dir is the truth, `--resume` continues"), reconnect from a new session via the persisted record:
+
+- **Source of truth**: `$RUN_DIR/<BATCH>-run.json` (runId / dashboard / workflow / argsFile, **per-batch, never overwriting each other**) + omega's own `~/.omegacode/runs/<runId>/` journal.
 - **Reconnect from any new session** (even if the original terminal is closed):
 
   ```bash
