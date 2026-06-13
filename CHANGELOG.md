@@ -15,6 +15,12 @@
 
 ### Changed
 
+- `codex-dev`：**统一为单一 omega 引擎**——取消"串行/并发"双轨。所有 codex 派活（单任务或多任务）
+  都跑成 omega workflow（N 个任务 = N 个 agent，独立则 `parallel`、有依赖则分批按序），因此
+  **每次派活都有 dashboard + 完成通知 + 重连 + 跟踪地址**，解决"单任务跑几小时看不到进度"的黑箱。
+  omega 改为必需依赖；返工统一为在 worktree 内再派一个 1-agent omega run；移除 `codex exec` 串行轨
+  及其 stdin/超时雷区。已对 omegacode 源码验证：单 agent run 也有 dashboard、viewer 覆盖 every run、
+  omega 本身无 serial/concurrent 概念（并发靠 `parallel`/`pipeline`）。
 - `codex-dev`：并发轨改用 Bash `run_in_background` 跑 omega（不再 nohup detached）——omega 无 executor daemon、
   `run` 阻塞至完成（已对 omegacode 源码 + DESIGN.md 验证），进程退出即由 harness 通知 Claude 推进验收，
   与串行轨同机制、免 watcher；会话中途挂掉的场景由 `<BATCH>-run.json` + `--resume` 接管。

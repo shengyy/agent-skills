@@ -1,45 +1,47 @@
 ---
 name: codex-dev
-description: Full loop for delegating development tasks to the OpenAI Codex CLI. Claude plans the approach, writes the task brief, orchestrates (serial or concurrent via omegacode + physical worktree isolation), runs mechanical acceptance + review + merge; codex only writes code inside a workspace-write sandbox. Use when the user says "delegate"/"hand it to codex"/"have codex implement|build <task>"/"fan out several codex tasks", or runs /codex-dev. For review/consultation only (no code-writing) use gstack-codex instead, not this skill.
+description: Full loop for delegating development tasks to the OpenAI Codex CLI. Claude plans the approach, writes the task brief, orchestrates, runs mechanical acceptance + review + merge; codex only writes code inside a workspace-write sandbox. Every codex task runs as an omegacode agent (one task = a 1-agent run, several = multi-agent: parallel if independent, ordered if dependent), so every dispatch gets a live dashboard, a completion notification, and disk-persisted reconnect. Use when the user says "delegate"/"hand it to codex"/"have codex implement|build <task>"/"fan out several codex tasks", or runs /codex-dev. For review/consultation only (no code-writing) use gstack-codex instead, not this skill.
 ---
 
 # /codex-dev — delegate-to-codex development loop
 
-Division of labor: Claude plans, writes the task brief, orchestrates, runs acceptance + review + merge; codex only implements. The flow advances on its own and only stops to ask the user when BLOCKED, when a merge conflict needs a ruling, or when something would cross the role boundary. Report a one-line progress update on every task state change. **After dispatching, print the task's tracking address to the user**: the concurrent track gives the omega dashboard URL; the serial track gives the `tail -f` path to its `events.jsonl`.
+Division of labor: Claude plans, writes the task brief, orchestrates, runs acceptance + review + merge; codex only implements. The flow advances on its own and only stops to ask the user when BLOCKED, when a merge conflict needs a ruling, or when something would cross the role boundary. Report a one-line progress update on every task state change.
 
-Two tracks, sharing one set of brief / acceptance / review / merge discipline:
+**One engine: every codex task runs as an `omegacode` agent.** There is no "serial vs concurrent" split — *N tasks are N agents*. How many, and whether they run in parallel or in sequence, is an orchestration decision you make in Step 1, not a separate tool:
 
-| Track | When | Tool |
-|---|---|---|
-| A — serial | single task, or tasks with dependencies | `codex exec` + `resume <thread_id>` (rework keeps session context) |
-| B — concurrent | ≥2 mutually independent tasks | `omegacode` workflow (deterministic orchestration + watchdog + journal + live dashboard) + Claude-prebuilt worktrees |
+- **One task** → a 1-agent run.
+- **Several independent tasks** → one run, agents in `parallel()`.
+- **Dependent tasks** → separate runs in dependency order (dispatch B after A merges).
+
+Because everything goes through omega, **every dispatch — even a single hours-long task — gets a live web dashboard, a completion notification (the run is a Bash `run_in_background` job, so the harness wakes you when it exits), and disk-persisted reconnect.** **Right after dispatching, always print the run's dashboard address to the user** — a long task with no visible progress is a black box; never leave the user blind.
 
 ## Step 0: Preflight checks
 
 ```bash
 REPO_ROOT=$(git rev-parse --show-toplevel)
 command -v codex >/dev/null && codex --version || echo "CODEX_NOT_FOUND"
+OMEGA=$(command -v omegacode) || echo "OMEGA_NOT_FOUND"
 command -v python3 >/dev/null || echo "PYTHON3_NOT_FOUND"
 [ -f "${CODEX_HOME:-$HOME/.codex}/auth.json" ] || [ -n "$CODEX_API_KEY" ] || [ -n "$OPENAI_API_KEY" ] || echo "AUTH_MISSING"
-OMEGA=$(command -v omegacode || echo "")
 git -C "$REPO_ROOT" status --porcelain | head -5
 mkdir -p "$REPO_ROOT/.runtime/codex-dev"
 ```
 
-- `CODEX_NOT_FOUND` → stop: `npm install -g @openai/codex`. `AUTH_MISSING` → stop: `codex login`. `PYTHON3_NOT_FOUND` → stop: install python3 (used by the concurrent track for dispatch and args/state persistence).
+- `CODEX_NOT_FOUND` → stop: `npm install -g @openai/codex`. `AUTH_MISSING` → stop: `codex login`.
+- `OMEGA_NOT_FOUND` → stop. omega is the execution engine — without it there is no dispatch. **Don't auto-install** (env-level change + network); show the standard global-install command for the user to confirm: `npm install -g omegacode` (installs into the user's npm global prefix; if that dir needs permissions, suggest sudo, or `npm config set prefix <writable-dir>` and add its `bin` to PATH). After consent, install and run `omegacode doctor` to confirm the codex worker is OK.
+- `PYTHON3_NOT_FOUND` → stop: install python3 (used to build args and persist run state).
 - codex 0.120.0–0.120.2 has a stdin-deadlock bug → warn to upgrade, don't block.
-- `$OMEGA` empty and this run needs the concurrent track → **do NOT auto-install** (env-level change + network); show the standard global-install command for the user to confirm: `npm install -g omegacode` (installs into the user's npm global prefix; if that dir needs permissions, suggest sudo, or `npm config set prefix <writable-dir>` and add its `bin` to PATH), install only after consent then run `omegacode doctor` to confirm the codex worker is OK; if declined, fall back to the serial track one task at a time.
-- **Sandbox iron rule**: the user's global `~/.codex/config.toml` may be `sandbox_mode = "danger-full-access"` (desktop config). Dispatch commands MUST pass `-s workspace-write` explicitly (omegacode side: `defaultSandbox: "workspace-write"`), never relying on the global default; a missing flag is an incident — abort immediately and re-dispatch.
+- **Sandbox iron rule**: the user's global `~/.codex/config.toml` may be `sandbox_mode = "danger-full-access"` (desktop config). The workflow MUST set `defaultSandbox: "workspace-write"` and never rely on the global default; a missing setting is an incident — abort and re-dispatch.
 - `.runtime/`, `.omegacode/`, `.claude/worktrees/` should be in the project's `.gitignore`; if not, add them before starting.
 
 ## Step 1: Task decomposition & tiers (first anti-collision gate)
 
-Concurrency collisions are prevented at dispatch-time orchestration, not patched up afterward:
+Collisions are prevented at dispatch-time orchestration, not patched up afterward:
 
-1. **Independence check**: for each candidate task, estimate the set of files/modules it will touch (from the project's spec docs and existing code structure). If any two tasks' file sets intersect, or there's an import dependency / interface coupling → not concurrent; make them serial or merge into one task.
+1. **Independence check**: for each candidate task, estimate the set of files/modules it will touch (from the project's spec docs and existing code structure). Tasks whose file sets are disjoint and have no import/interface coupling may run in the **same run** as parallel agents; any overlap or coupling → split into **separate ordered runs**, or merge into one task.
 2. **Dependency ordering**: B depends on A's output → dispatch B only after A is merged back to the main branch.
-3. **Concurrency cap 3**: codex tasks consume API quota + local test resources; queue beyond that.
-4. **Model & reasoning-effort tiers** (pass explicitly, don't rely on global defaults; honor the user's request when named):
+3. **Concurrency cap 3**: codex agents consume API quota + local test resources; keep ≤3 agents running at once.
+4. **Model & reasoning-effort tiers** (set per agent; honor the user's request when named):
 
 | Tier | When | Params |
 |---|---|---|
@@ -85,13 +87,13 @@ The final message must list: changed-files list, added-tests list, lint/test res
 
 **Main working tree has uncommitted changes → classify before choosing the base**: if those changes ARE the baseline this task depends on (the user got halfway and wants codex to continue), opening a worktree off the main branch would make codex build on stale code and misalign the merge — you MUST stop and confirm with the user (commit first, or build the task branch on the current state as base); if the changes are unrelated to the task → then isolate off the main branch per the flow below.
 
-**Single task and clean working tree** → create the task branch in the main working tree directly (saves worktree + env-rebuild overhead):
+**A single task with a clean working tree** → create the task branch in the main working tree directly; the agent's `cwd` is the repo root (saves worktree + env-rebuild overhead):
 
 ```bash
 git -C "$REPO_ROOT" checkout -b "codex/$SLUG"   # the main working tree belongs to this task during dispatch
 ```
 
-**Concurrent tasks, or a dirty working tree (unrelated changes)** → one worktree per task, physical isolation. Concurrency in the same working tree inevitably collides: git status can't be attributed, test caches conflict, and on rework codex will "helpfully fix" others' changes it sees. Conventions are unreliable; isolation is reliable:
+**Multiple tasks (parallel agents), or a dirty working tree (unrelated changes)** → one worktree per task, physical isolation; each agent's `cwd` is its own worktree. Several agents in one working tree inevitably collide: git status can't be attributed, test caches conflict, and on rework codex will "helpfully fix" others' changes it sees. Conventions are unreliable; isolation is reliable:
 
 ```bash
 SLUG=<slug>
@@ -107,52 +109,14 @@ python3 -m venv "$WT/<pkg>/.venv" && "$WT/<pkg>/.venv/bin/pip" install -q -e "$W
 
 Finally run the project's lint/test once inside the worktree: **the baseline must be green** — dispatching on red makes failures unattributable; if the baseline is red → fix the main branch first, don't dispatch.
 
-## Step 4A: Serial track (codex exec)
+## Step 4: Dispatch via omega
 
-```bash
-RUN="$REPO_ROOT/.runtime/codex-dev/$SLUG"; WORK=${WT:-$REPO_ROOT}
-codex exec -s workspace-write \
-  -C "$WORK" \
-  -m gpt-5.5 -c 'model_reasoning_effort="<tier>"' \
-  --json -o "$RUN/report.md" \
-  "$(cat "$RUN/brief.md")" \
-  </dev/null 2>"$RUN/stderr.log" > "$RUN/events.jsonl"
-```
-
-After dispatching, print the tracking address to the user: `tail -f "$RUN/events.jsonl"` (event stream, updates incrementally).
-
-Execution minefield (violate and it crashes):
-
-- **stdin must be `</dev/null`**: codex always reads stdin; not closing it blocks forever (symptom: zero output, zero CPU, looks hung). **Pipe trap**: in `echo "..." | codex ... </dev/null`, the `</dev/null` overrides the pipe and codex gets empty input — always pass the prompt as a positional arg, never via a pipe.
-- Thinking tokens go to stderr, persisted to `$RUN/stderr.log` (don't drop to /dev/null — needed for debugging; in the final report only summarize key errors, don't forward the content verbatim).
-- codex has **no intermediate output**: if the process is killed early, `report.md` is empty with no error. Empty file = timeout/killed, not "nothing changed".
-- Run via Bash `run_in_background`; timeout by tier: medium 300s / high 600s / xhigh 1200s. Split tasks expected to exceed 15 min.
-- When `-C` points at the repo root (or worktree root) the whole dir is writable — the directory-level allowlist is backstopped by the Step 5 out-of-scope check. `workspace-write` is usually offline by default, but **don't treat "no network" as a technical guarantee** (config can override) — the network ban is enforced by the brief's behavioral constraint.
-
-Right after dispatch, write `$RUN/state.json` (for crash recovery):
-
-```json
-{"slug":"...","phase":"dispatched|accepted|rework-N|merged|failed|blocked",
- "track":"exec|omega","thread_id":"...","worktree":"...","branch":"...","tier":"high"}
-```
-
-On completion, grab the session id and usage (required for rework; **never `resume --last`** — it points wrong under concurrency or multiple sessions):
-
-```bash
-THREAD_ID=$(head -1 "$RUN/events.jsonl" | grep -o '"thread_id":"[^"]*"' | cut -d'"' -f4)
-grep '"type":"turn.completed"' "$RUN/events.jsonl" | tail -1
-```
-
-Failure isolation: non-zero exit or empty events → first read `$RUN/stderr.log` to localize (auth, rate-limit, version bug); fix and rerun once if fixable; two consecutive failures → mark `failed`, don't drag down other tasks, report at the summary.
-
-## Step 4B: Concurrent track (omegacode)
-
-Prerequisite: each task's worktree and env are ready per Step 3. **First pick a name `BATCH` for this batch** (lowercase kebab-case, e.g. `oauth-migration`) — the workflow, log, state, and args all use it as prefix; **set it once and reuse the same variable throughout so names can't drift apart**. Write the workflow below to `$RUN_DIR/$BATCH-fanout.workflow.js` (omega shows the run on the dashboard by filename, so you can tell which batch at a glance; the `-fanout.workflow.js` suffix is fixed, marking it the orchestration script):
+One agent per task. A single task is just a one-element `tasks` array; independent tasks are multiple elements (omega runs them in `parallel`, capped at its concurrency). **Pick a name `BATCH` for this run** (lowercase kebab-case, e.g. `oauth-migration`) — the workflow, log, state, and args all use it as prefix; **set it once and reuse the same variable throughout so names can't drift apart**. Write the workflow to `$RUN_DIR/$BATCH-fanout.workflow.js` (omega shows the run on the dashboard by filename, so you can tell which one at a glance; the `-fanout.workflow.js` suffix is fixed, marking it the orchestration script):
 
 ```js
 export const meta = {
   name: "codex-dev-fanout",
-  description: "Concurrent dispatch: one codex agent per task, implementing inside its prebuilt worktree",
+  description: "Dispatch one codex agent per task, implementing inside its prebuilt worktree (or the repo root for a single task)",
   defaultProvider: "codex", defaultModel: "gpt-5.5",
   defaultSandbox: "workspace-write",
   phases: [{ title: "Implement" }],
@@ -172,7 +136,7 @@ return await parallel(args.tasks.map((t) => () =>
 ))
 ```
 
-Invoke (`tasks[].brief` carries the full brief text). First set per-batch names and write the args:
+`tasks[].brief` carries the full brief text; `tasks[].worktree` is the task's cwd (its worktree, or the repo root for a single main-tree task). First set per-batch names and write the args:
 
 ```bash
 RUN_DIR="$REPO_ROOT/.runtime/codex-dev"; mkdir -p "$RUN_DIR"
@@ -184,7 +148,7 @@ python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"   # pe
 [ -s "$ARGSFILE" ] || { echo "ARGS generation failed, stop"; exit 1; }
 ```
 
-**Dispatch this command as a Bash `run_in_background` job** (NOT `nohup`/detached): `omega run` blocks until the whole batch finishes — omega has no executor daemon by design, the run lives in one process — so when it exits the harness fires a completion notification, which is your cue to go to Step 5 (same mechanism as the serial track). **Don't add `--json`** (it suppresses the `view:` line):
+**Dispatch this command as a Bash `run_in_background` job** (NOT `nohup`/detached): `omega run` blocks until the run finishes — omega has no executor daemon by design, the run lives in one process — so when it exits the harness fires a completion notification, which is your cue to go to Step 5. **Don't add `--json`** (it suppresses the `view:` line):
 
 ```bash
 "$OMEGA" run "$WF" --args-file "$ARGSFILE" > "$LOG" 2>&1
@@ -212,16 +176,23 @@ PY
 echo "▶ track: tail -f $LOG    (status: \"$OMEGA\" runs)"
 ```
 
+Also write a per-task state file for crash recovery, one per task in the batch — `$RUN_DIR/<slug>/state.json`:
+
+```json
+{"slug":"...","phase":"dispatched|accepted|rework-N|merged|failed|blocked",
+ "batch":"<batch>","worktree":"...","branch":"...","tier":"high"}
+```
+
 - **Print the dashboard address (`$VIEW`) to the user** — a read-only web board to watch each codex's phase / progress / token use live; it's the full per-run URL (with `/#/run/<runId>`), so it stays unambiguous across multiple dispatches.
 - Key design: **don't use omegacode's `worktree:` option** (when it builds its own worktree, Claude can't inject the env-setup step); use `cwd:` pointing at the prebuilt worktree — omegacode does pure deterministic orchestration (concurrency scheduling, 30-min no-progress watchdog, journal, token stats), and the worktree lifecycle belongs to Claude.
-- It drives codex over `codex app-server` JSON-RPC; the serial track's stdin/timeout minefield doesn't apply.
+- It drives codex over `codex app-server` JSON-RPC (no stdin/timeout pitfalls of a raw `codex exec`).
 - The runId comes from `omega runs` (matched by the unique filename — authoritative even if the viewer never started); the dashboard URL, when the viewer is up, is the `view:` line in the log. On completion read the structured result from the log or `${OMEGACODE_HOME:-~/.omegacode}/runs/<runId>/`.
 - A single failed agent shows as null/failed in the results array — rework only that task, the rest are unaffected.
 - Extras (only when the user asks): hard tasks can run the built-in `bake-off` (codex and claude-code each implement in isolated worktrees, blind-judged for a winner) or `multi-provider-review` (two models review independently, then synthesize).
 
 ### Completion & reconnect
 
-**You get woken automatically.** Because the dispatch is a Bash `run_in_background` job and `omega run` blocks until the batch finishes (omega has **no executor daemon** by design — a run lives and dies with its one process), the harness fires a completion notification when that process exits. That is your cue to proceed to Step 5 — no watcher or polling needed.
+**You get woken automatically.** Because the dispatch is a Bash `run_in_background` job and `omega run` blocks until the run finishes (omega has **no executor daemon** by design — a run lives and dies with its one process), the harness fires a completion notification when that process exits. That is your cue to proceed to Step 5 — no watcher or polling needed.
 
 **If the session died before omega finished** (the background run dies with the session; omega's recovery model is "the run dir is the truth, `--resume` continues"), reconnect from a new session via the persisted record:
 
@@ -253,8 +224,8 @@ git -C "$WORK" status --porcelain | cut -c4- | grep -vE '^(<project write-allowl
 
 Out-of-scope files: tracked → restore with `git -C "$WORK" checkout -- <file>`, untracked → delete, and name them in the rework notes.
 
-2. **lint + test**: run the project commands in `$WORK`; keep failing output verbatim as rework material.
-3. codex's completion report (report.md / structured REPORT) is only a lead, **not a conclusion**.
+2. **lint + test**: run the project commands in `$WORK` (the task's worktree, or repo root for a single main-tree task); keep failing output verbatim as rework material.
+3. codex's completion report (the structured REPORT) is only a lead, **not a conclusion**.
 
 ## Step 6: Review (Claude does it personally; must not delegate back to codex)
 
@@ -269,23 +240,9 @@ Independent judgment: verify key assertions in the code; don't take codex's self
 
 ## Step 7: Rework (≤3 rounds per task)
 
-Write review notes to `$RUN/rework-brief.md`: one per line "issue, location file:line, expected behavior, cited spec item"; if the reviewer touched the working tree (e.g. restored out-of-scope files), state it clearly. **Review notes always go through a positional arg** — in `echo "..." | codex ... </dev/null` the `</dev/null` overrides the pipe and codex gets empty input.
+Write review notes to `$RUN_DIR/<slug>/rework-<N>.md`: one per line "issue, location file:line, expected behavior, cited spec item"; if the reviewer touched the working tree (e.g. restored out-of-scope files), state it clearly.
 
-- Serial track (resume keeps the original session context; the resume subcommand has no `-s`/`-C` flag — don't gamble on inherited sandbox behavior, pin it explicitly with `-c`):
-
-```bash
-codex exec resume "$THREAD_ID" -c 'sandbox_mode="workspace-write"' --json \
-  "$(cat "$RUN/rework-brief.md")" </dev/null 2>"$RUN/stderr-rework-<N>.log" > "$RUN/rework-<N>.jsonl"
-```
-
-resume can't find the session or cwd mismatch → fall back to a new session (same as the concurrent-track command, `-C` pointing at the original working dir).
-
-- Concurrent track (start a new session inside the worktree; the working-tree state is the context):
-
-```bash
-codex exec -s workspace-write -C "$WT" -m gpt-5.5 -c 'model_reasoning_effort="<original-tier>"' \
-  --json "$(cat "$RUN/rework-brief.md")" </dev/null 2>"$RUN/stderr-rework-<N>.log" > "$RUN/rework-<N>.jsonl"
-```
+Re-dispatch as a fresh **1-task omega run** (Step 4) whose single `tasks[].brief` is the rework notes and whose `cwd` is the task's worktree — the working-tree state is the context (codex sees its prior changes on disk). Use `BATCH=<slug>-rework-<N>` so it gets its own dashboard address, completion notification, and reconnect record, exactly like any other dispatch. The same effort tier as the original.
 
 After each rework round return to Step 5. 3 rounds without passing → mark `blocked`, stop that task, report to the user: what was tried, where it's stuck, two ways out (human intervention / Claude fixes it directly — the latter crosses the role boundary and needs the user's nod).
 
@@ -310,8 +267,8 @@ git -C "$REPO_ROOT" worktree remove "$WT" && git -C "$REPO_ROOT" branch -d "code
 
 4. Update `state.json` to `merged`; downstream tasks depending on this output can only be dispatched now.
 
-After everything is wrapped up, report together: each task's tier and rework rounds, changed files and test results, commit hashes, token usage (serial track: sum events.jsonl's `turn.completed`; omega track: use its usage stats), failed/blocked reasons and suggestions, task-list status update suggestions.
+After everything is wrapped up, report together: each task's tier and rework rounds, changed files and test results, commit hashes, token usage (from each omega run's usage stats), failed/blocked reasons and suggestions, task-list status update suggestions.
 
 ## Recovery protocol
 
-Re-entering after a session interruption: scan `$REPO_ROOT/.runtime/codex-dev/*/state.json` and continue by phase (`dispatched` with no `turn.completed` in events → check whether the codex process is still alive; `rework-N` → re-run acceptance; `accepted` → go to merge). For the omega track, read `.runtime/codex-dev/<BATCH>-run.json` for runId/dashboard/argsFile, `"$OMEGA" runs` to see if it's still running, `run <workflow> --args-file <argsFile> --resume <runId>` to continue the unfinished part (resume must replay the original args, or precondition mismatch; see "Background runs & reconnect"). Worktrees and thread_ids are all in the state files, no re-dispatch needed.
+Re-entering after a session interruption: scan `$REPO_ROOT/.runtime/codex-dev/*/state.json` and continue by phase (`dispatched` → check whether the run is still going, below; `rework-N` → re-run acceptance; `accepted` → go to merge). For the run itself, read `.runtime/codex-dev/<BATCH>-run.json` for runId/dashboard/argsFile, `"$OMEGA" runs` to see if it's still running, and `run <workflow> --args-file <argsFile> --resume <runId>` to continue the unfinished part (resume must replay the original args, or precondition mismatch; see "Completion & reconnect"). Worktrees and the batch runId are all in the state/record files, no re-dispatch needed.
