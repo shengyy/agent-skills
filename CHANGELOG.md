@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-13
+
 ### Fixed
 
 - `codex-dev`：修复 SKILL.md frontmatter 的 YAML 报错——`description` 里 `multi-agent: parallel`
@@ -80,6 +82,7 @@
 - `scripts/validate_skills.py` 校验脚本 + `validate-skills` GitHub Action，
   自动校验每个 `SKILL.md` 的 frontmatter。
 
-[Unreleased]: https://github.com/shengyy/agent-skills/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/shengyy/agent-skills/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/shengyy/agent-skills/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/shengyy/agent-skills/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/shengyy/agent-skills/releases/tag/v0.1.0
