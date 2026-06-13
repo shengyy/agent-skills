@@ -18,17 +18,16 @@ description: 把开发任务派发给 OpenAI Codex CLI 实施的通用闭环。C
 
 ```bash
 REPO_ROOT=$(git rev-parse --show-toplevel)
-command -v codex >/dev/null || echo "CODEX_NOT_FOUND"
-codex --version
+command -v codex >/dev/null && codex --version || echo "CODEX_NOT_FOUND"
 [ -f "${CODEX_HOME:-$HOME/.codex}/auth.json" ] || [ -n "$CODEX_API_KEY" ] || [ -n "$OPENAI_API_KEY" ] || echo "AUTH_MISSING"
-OMEGA=$(command -v omegacode || { [ -x ~/.npm-global/bin/omegacode ] && echo ~/.npm-global/bin/omegacode; } || echo "")
+OMEGA=$(command -v omegacode || echo "")
 git -C "$REPO_ROOT" status --porcelain | head -5
 mkdir -p "$REPO_ROOT/.runtime/codex-dev"
 ```
 
 - `CODEX_NOT_FOUND` → 停：`npm install -g @openai/codex`。`AUTH_MISSING` → 停：`codex login`。
 - codex 0.120.0–0.120.2 有 stdin 死锁缺陷 → 警告升级，不阻塞。
-- `$OMEGA` 为空且本次需要并发轨 → **不要自动安装**（用户环境级修改且走网络），把命令给用户确认：`npm install -g --prefix ~/.npm-global omegacode`，同意后再装并跑 `omegacode doctor` 确认 codex worker OK；不同意则退回串行轨逐个跑。
+- `$OMEGA` 为空且本次需要并发轨 → **不要自动安装**（用户环境级修改且走网络），把标准全局安装命令给用户确认：`npm install -g omegacode`（装到用户 npm 全局 prefix；若该目录需权限，提示用 sudo 或先 `npm config set prefix <可写目录>` 并把其 `bin` 加进 PATH），同意后再装并跑 `omegacode doctor` 确认 codex worker OK；不同意则退回串行轨逐个跑。
 - **沙箱铁律**：用户 `~/.codex/config.toml` 全局可能是 `sandbox_mode = "danger-full-access"`（桌面版配置）。派工命令必须显式传 `-s workspace-write`（omegacode 侧 `defaultSandbox: "workspace-write"`），永不依赖全局默认；发现漏传视为事故，立即终止重派。
 - `.runtime/`、`.omegacode/`、`.claude/worktrees/` 应在项目 .gitignore 里；不在则补上再开工。
 
@@ -178,15 +177,22 @@ ARGS=$(python3 -c 'import json;print(json.dumps({"tasks":[...]}))')
 
 nohup "$OMEGA" run "$RUN_DIR/fanout.workflow.js" --args "$ARGS" \
   >"$RUN_DIR/omega-run.log" 2>&1 &
-OMEGA_PID=$!; sleep 2
-RUN_ID=$("$OMEGA" runs 2>/dev/null | awk '/fanout\.workflow\.js/{print $1; exit}')
-printf '{"runId":"%s","pid":%s,"dashboard":"http://127.0.0.1:4123/#/run/%s","workflow":"%s/fanout.workflow.js","log":"%s/omega-run.log"}\n' \
-  "$RUN_ID" "$OMEGA_PID" "$RUN_ID" "$RUN_DIR" "$RUN_DIR" > "$RUN_DIR/omega-run.json"
+OMEGA_PID=$!
+
+# omega 起跑即向日志写 `view: http://127.0.0.1:<port>/#/run/<runId>`（**别加 --json**，会抑制该行）。
+# 从日志解析本次 run 的 URL/runId——精确对应这次启动，不靠按文件名猜（多个同名 run 会认错）。
+for _ in $(seq 1 20); do
+  VIEW=$(grep -oE 'http://127\.0\.0\.1:[0-9]+/#/run/wf_[0-9a-f]+' "$RUN_DIR/omega-run.log" | head -1)
+  [ -n "$VIEW" ] && break; sleep 0.5
+done
+RUN_ID=${VIEW##*/}
+printf '{"runId":"%s","pid":%s,"dashboard":"%s","workflow":"%s/fanout.workflow.js","log":"%s/omega-run.log"}\n' \
+  "$RUN_ID" "$OMEGA_PID" "$VIEW" "$RUN_DIR" "$RUN_DIR" > "$RUN_DIR/omega-run.json"
 ```
 
 - 关键设计：**不用 omegacode 的 `worktree:` 选项**（它自建 worktree 时 Claude 插不进装环境这步），用 `cwd:` 指向预建 worktree——omegacode 纯做确定性编排（并发调度、30 分钟无进展 watchdog、journal、token 统计），worktree 生命周期归 Claude。
 - 它经 `codex app-server` JSON-RPC 驱动 codex，串行轨的 stdin/超时雷区不适用。
-- `--json` 只在 run 结束时输出最终结果；跑中途要拿 runId 用 `"$OMEGA" runs`（按 workflow 文件名认）。完成后从 `omega-run.log` 或 `~/.omegacode/runs/<runId>/` 读结构化结果。
+- runId 起跑时就由 omega 写进 `omega-run.log` 的 `view:` 行（上面已解析落盘，含真实端口）；完成后从 `omega-run.log` 或 `~/.omegacode/runs/<runId>/` 读结构化结果。
 - 单个 agent 失败在结果数组里是 null/failed 状态——只打回该任务，不影响其余。
 - 附加玩法（用户点名才用）：困难任务可跑内置 `bake-off`（codex 与 claude-code 在隔离 worktree 各自实现，盲评出胜者）或 `multi-provider-review`（双模型独立评审再合成）。
 
@@ -199,10 +205,11 @@ omega 起跑后是 detached 进程，会话/终端关掉它仍在后台跑。这
 - **任何新会话重连**（哪怕原终端已关）：
 
   ```bash
+  OMEGA=$(command -v omegacode) || echo "omegacode 不在 PATH → 先 npm install -g omegacode"
   RUN_DIR="$(git rev-parse --show-toplevel)/.runtime/codex-dev"
-  cat "$RUN_DIR/omega-run.json"                 # 取 runId / dashboard
+  cat "$RUN_DIR/omega-run.json"                 # 取 runId / dashboard（含真实端口）
   "$OMEGA" runs                                 # 还在跑？看 status / agents 数
-  "$OMEGA" serve --port 4123                    # 重开 dashboard（已起则复用）
+  "$OMEGA" serve                                # 重开 dashboard（自动选端口，已起则复用）
   "$OMEGA" run "$RUN_DIR/fanout.workflow.js" --resume <runId>   # 崩/中断 → 只续跑未完成部分
   ```
 

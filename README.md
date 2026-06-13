@@ -47,11 +47,13 @@ npm install -g @openai/codex
 codex login
 
 # 2. omegacode (optional — only for the concurrent track)
-npm install -g --prefix ~/.npm-global omegacode
+npm install -g omegacode
 omegacode doctor   # verify the codex worker is ready
 ```
 
 > Sandbox note: the delegation commands force `-s workspace-write` internally and don't rely on your global default. If your `~/.codex/config.toml` sets `danger-full-access`, just be aware — the skill overrides it explicitly.
+
+> Model: tasks run on **`gpt-5.5`** by default, at a reasoning effort chosen per task (`medium` / `high` / `xhigh`). To use a different model, just edit `model` / `defaultModel` in the skill.
 
 The concurrent track runs as a **detached background job with a live dashboard** — close your terminal and the run keeps going; any new session reattaches via the recorded run ID (no babysitting process required).
 

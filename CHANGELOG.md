@@ -19,6 +19,14 @@
   runId/dashboard/pid，任何新会话（含终端已关）凭 `omega-run.json` +
   `omegacode runs` + `--resume` 重连，不依赖 watcher 进程存活。
 
+### Fixed
+
+- `codex-dev`：去掉写死的 `~/.npm-global` 路径——omega 检测改用 `command -v omegacode`，
+  安装口径统一为标准 `npm install -g omegacode`，可移植到任意机器。
+- `codex-dev`：并发轨 runId 改为从 `omega-run.log` 的 `view:` 行解析（含真实端口），
+  替代按 workflow 文件名匹配 `omegacode runs`（多个同名 run 会认错）。
+- `codex-dev`：重连片段补回 `OMEGA` 探测使其自包含；`codex --version` 仅在 codex 存在时执行。
+
 ## [0.1.0] - 2026-06-13
 
 ### Added
