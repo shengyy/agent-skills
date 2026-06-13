@@ -6,6 +6,8 @@ Checks, for each skills/<name>/SKILL.md:
   2. `name` and `description` are present and non-empty
   3. the folder name matches the `name` field
   4. SKILL.md has a body after the frontmatter
+  5. frontmatter values are strict-YAML-safe (no unquoted ": ", which GitHub's
+     frontmatter renderer and other strict parsers reject)
 
 No third-party dependencies — runs on a bare python3 (CI and local alike).
 Exit code 0 = all good, 1 = at least one problem.
@@ -81,7 +83,19 @@ def main() -> int:
         if not body:
             errors.append(f"{rel}/SKILL.md: frontmatter 之后没有正文内容")
 
-        if name and desc and name == d.name and body:
+        # strict-YAML safety: an unquoted scalar value containing ": " (colon-space) is parsed
+        # as a nested mapping and breaks strict YAML parsers (e.g. GitHub's frontmatter renderer).
+        yaml_ok = True
+        for k, v in fm.items():
+            quoted = len(v) >= 2 and ((v[0] == '"' and v[-1] == '"') or (v[0] == "'" and v[-1] == "'"))
+            if ": " in v and not quoted:
+                errors.append(
+                    f"{rel}/SKILL.md: frontmatter `{k}` 的值含未加引号的 ': '（破坏严格 YAML，如 GitHub 渲染）"
+                    "——去掉冒号后的空格，或给整个值加引号"
+                )
+                yaml_ok = False
+
+        if name and desc and name == d.name and body and yaml_ok:
             ok.append(d.name)
 
     print(f"扫描 {len(skill_dirs)} 个 skill 目录\n")

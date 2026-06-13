@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `codex-dev`：修复 SKILL.md frontmatter 的 YAML 报错——`description` 里 `multi-agent: parallel`
+  的 `: `（冒号+空格）被严格 YAML（GitHub frontmatter 渲染器）当成嵌套映射，报
+  "mapping values are not allowed"；去掉冒号后的空格即可（skills CLI / 本仓校验脚本解析宽松，故功能未受影响）。
+- `validate_skills.py`：新增严格 YAML 安全检查——frontmatter 值含未加引号的 `: ` 直接 CI 拦下，防再犯。
+
 ## [0.2.0] - 2026-06-13
 
 ### Added

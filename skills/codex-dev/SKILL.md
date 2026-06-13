@@ -1,6 +1,6 @@
 ---
 name: codex-dev
-description: Full loop for delegating development tasks to the OpenAI Codex CLI. Claude plans the approach, writes the task brief, orchestrates, runs mechanical acceptance + review + merge; codex only writes code inside a workspace-write sandbox. Every codex task runs as an omegacode agent (one task = a 1-agent run, several = multi-agent: parallel if independent, ordered if dependent), so every dispatch gets a live dashboard, a completion notification, and disk-persisted reconnect. Use when the user says "delegate"/"hand it to codex"/"have codex implement|build <task>"/"fan out several codex tasks", or runs /codex-dev. For review/consultation only (no code-writing) use gstack-codex instead, not this skill.
+description: Full loop for delegating development tasks to the OpenAI Codex CLI. Claude plans the approach, writes the task brief, orchestrates, runs mechanical acceptance + review + merge; codex only writes code inside a workspace-write sandbox. Every codex task runs as an omegacode agent (one task = a 1-agent run, several = multi-agent, parallel if independent and ordered if dependent), so every dispatch gets a live dashboard, a completion notification, and disk-persisted reconnect. Use when the user says "delegate"/"hand it to codex"/"have codex implement|build <task>"/"fan out several codex tasks", or runs /codex-dev. For review/consultation only (no code-writing) use gstack-codex instead, not this skill.
 ---
 
 # /codex-dev — delegate-to-codex development loop
