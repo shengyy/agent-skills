@@ -19,13 +19,14 @@ description: 把开发任务派发给 OpenAI Codex CLI 实施的通用闭环。C
 ```bash
 REPO_ROOT=$(git rev-parse --show-toplevel)
 command -v codex >/dev/null && codex --version || echo "CODEX_NOT_FOUND"
+command -v python3 >/dev/null || echo "PYTHON3_NOT_FOUND"
 [ -f "${CODEX_HOME:-$HOME/.codex}/auth.json" ] || [ -n "$CODEX_API_KEY" ] || [ -n "$OPENAI_API_KEY" ] || echo "AUTH_MISSING"
 OMEGA=$(command -v omegacode || echo "")
 git -C "$REPO_ROOT" status --porcelain | head -5
 mkdir -p "$REPO_ROOT/.runtime/codex-dev"
 ```
 
-- `CODEX_NOT_FOUND` → 停：`npm install -g @openai/codex`。`AUTH_MISSING` → 停：`codex login`。
+- `CODEX_NOT_FOUND` → 停：`npm install -g @openai/codex`。`AUTH_MISSING` → 停：`codex login`。`PYTHON3_NOT_FOUND` → 停：装 python3（并发轨派单、args/状态落盘都用它）。
 - codex 0.120.0–0.120.2 有 stdin 死锁缺陷 → 警告升级，不阻塞。
 - `$OMEGA` 为空且本次需要并发轨 → **不要自动安装**（用户环境级修改且走网络），把标准全局安装命令给用户确认：`npm install -g omegacode`（装到用户 npm 全局 prefix；若该目录需权限，提示用 sudo 或先 `npm config set prefix <可写目录>` 并把其 `bin` 加进 PATH），同意后再装并跑 `omegacode doctor` 确认 codex worker OK；不同意则退回串行轨逐个跑。
 - **沙箱铁律**：用户 `~/.codex/config.toml` 全局可能是 `sandbox_mode = "danger-full-access"`（桌面版配置）。派工命令必须显式传 `-s workspace-write`（omegacode 侧 `defaultSandbox: "workspace-write"`），永不依赖全局默认；发现漏传视为事故，立即终止重派。
@@ -146,7 +147,7 @@ grep '"type":"turn.completed"' "$RUN/events.jsonl" | tail -1
 
 ## Step 4B：并发轨（omegacode）
 
-前提：各任务 worktree 与环境已按 Step 3 备好。把 workflow 写到 `$REPO_ROOT/.runtime/codex-dev/<本次任务名>-fanout.workflow.js`——**前缀用本次派工的任务/项目名**（omega 看板按文件名显示 run，这样一眼认出是哪个，而非千篇一律的 fanout）；`-fanout.workflow.js` 后缀固定，标明这是编排脚本：
+前提：各任务 worktree 与环境已按 Step 3 备好。**先给本批起一个名字 `BATCH`**（小写 kebab-case，如 `oauth-migration`）——workflow、日志、状态、args 全用它做前缀，**只定这一次、全程复用同一个变量，名字就不会对不上**。把下面的 workflow 写到 `$RUN_DIR/$BATCH-fanout.workflow.js`（omega 看板按文件名显示 run，一眼认出是哪批；`-fanout.workflow.js` 后缀固定，标明是编排脚本）：
 
 ```js
 export const meta = {
@@ -175,19 +176,27 @@ return await parallel(args.tasks.map((t) => () =>
 
 ```bash
 RUN_DIR="$REPO_ROOT/.runtime/codex-dev"; mkdir -p "$RUN_DIR"
-WF="$RUN_DIR/<本次任务名>-fanout.workflow.js"     # 上面的 workflow 就写到这里；文件名即看板 run 名
-ARGS=$(python3 -c 'import json;print(json.dumps({"tasks":[...]}))')
+BATCH=<本批名字>                                  # 小写 kebab-case；下面全程只用这一个变量，名字不会对不上
+WF="$RUN_DIR/$BATCH-fanout.workflow.js"          # 上面的 workflow 必须写到这个文件
+LOG="$RUN_DIR/$BATCH.log"; RUNJSON="$RUN_DIR/$BATCH-run.json"; ARGSFILE="$RUN_DIR/$BATCH-args.json"
 
-nohup "$OMEGA" run "$WF" --args "$ARGS" >"$RUN_DIR/omega-run.log" 2>&1 &
+python3 -c 'import json;print(json.dumps({"tasks":[...]}))' > "$ARGSFILE"     # args 落盘，resume 时原样复用
+[ -s "$ARGSFILE" ] || { echo "ARGS 生成失败，停"; exit 1; }
+
+nohup "$OMEGA" run "$WF" --args-file "$ARGSFILE" >"$LOG" 2>&1 &     # 用 --args-file（resume 才能带回原 args）；**别加 --json**（会抑制 view: 行）
 OMEGA_PID=$!
 
-# omega 起跑即把 view URL 写进日志（**别加 --json**，会抑制该行）；从日志解析出本次 run 的地址
-for _ in $(seq 1 20); do
-  VIEW=$(grep -oE 'http://127\.0\.0\.1:[0-9]+/#/run/wf_[0-9a-f]+' "$RUN_DIR/omega-run.log" | head -1)
+for _ in $(seq 1 20); do          # omega 起跑即把 view URL 写进日志，从中解析本次 run 地址（含真实端口）
+  VIEW=$(grep -oE 'http://127\.0\.0\.1:[0-9]+/#/run/wf_[0-9a-f]+' "$LOG" | head -1)
   [ -n "$VIEW" ] && break; sleep 0.5
 done
-printf '{"runId":"%s","pid":%s,"dashboard":"%s","workflow":"%s","log":"%s/omega-run.log"}\n' \
-  "${VIEW##*/}" "$OMEGA_PID" "$VIEW" "$WF" "$RUN_DIR" > "$RUN_DIR/omega-run.json"
+[ -n "$VIEW" ] || { echo "omega 没起来（10s 内无 view: 行），看 $LOG："; tail -20 "$LOG"; exit 1; }   # 硬停，不写空记录
+
+python3 - "$VIEW" "$OMEGA_PID" "$WF" "$LOG" "$ARGSFILE" "$RUNJSON" <<'PY'   # python 安全生成 JSON（路径含特殊字符也不坏）
+import json,sys
+v,pid,wf,log,af,out=sys.argv[1:7]
+json.dump({"runId":v.rsplit("/",1)[-1],"pid":int(pid),"dashboard":v,"workflow":wf,"log":log,"argsFile":af}, open(out,"w"))
+PY
 echo "▶ omega dashboard: $VIEW"   # 派单后把这个地址打印给用户
 ```
 
@@ -202,18 +211,21 @@ echo "▶ omega dashboard: $VIEW"   # 派单后把这个地址打印给用户
 
 omega 起跑后是 detached 进程，会话/终端关掉它仍在后台跑。这是并发轨的核心优点（不占会话），但要求**真相落盘、绝不依赖某个 watcher 进程活着**——否则会话一死就只剩孤儿 run、没人通知，下次进来又得满世界找它。
 
-- **真相来源**（断会话也在）：`$RUN_DIR/omega-run.json`（runId / dashboard / pid）+ omega 自身的 `~/.omegacode/runs/<runId>/` journal。
+- **真相来源**（断会话也在）：`$RUN_DIR/<BATCH>-run.json`（runId / dashboard / pid / workflow / argsFile，**每批独立、不互相覆盖**）+ omega 自身的 `~/.omegacode/runs/<runId>/` journal。
 - **watcher 是可选的即时提醒**：在线时可另起后台轮询 `"$OMEGA" runs`、结束时通知用户；但它只是锦上添花，**不是真相来源**，死了不影响重连。
 - **任何新会话重连**（哪怕原终端已关）：
 
   ```bash
-  OMEGA=$(command -v omegacode) || echo "omegacode 不在 PATH → 先 npm install -g omegacode"
+  OMEGA=$(command -v omegacode) || { echo "omegacode 不在 PATH → 先 npm install -g omegacode"; exit 1; }   # 找不到就停，别用空命令往下跑
   RUN_DIR="$(git rev-parse --show-toplevel)/.runtime/codex-dev"
-  cat "$RUN_DIR/omega-run.json"                 # 取 runId / dashboard（含真实端口）
-  "$OMEGA" runs                                 # 还在跑？看 status / agents 数
-  "$OMEGA" serve                                # 重开 dashboard（自动选端口，已起则复用）
-  WF=$(grep -oE '"workflow":"[^"]*"' "$RUN_DIR/omega-run.json" | cut -d'"' -f4)
-  "$OMEGA" run "$WF" --resume <runId>           # 崩/中断 → 只续跑未完成部分（workflow 路径从落盘记录读）
+  ls "$RUN_DIR"/*-run.json                        # 列出各批记录，挑要恢复的那批
+  RUNJSON="$RUN_DIR/<BATCH>-run.json"
+  J() { python3 -c "import json,sys;print(json.load(open('$RUNJSON'))[sys.argv[1]])" "$1"; }   # 安全读字段（含空格/特殊字符也行）
+  echo "dashboard: $(J dashboard)"                # 把地址打印给用户
+  "$OMEGA" runs                                   # 还在跑？看 status / agents 数
+  # 续跑（run 会自动拉起看板并重印 view: 行）；**必须带回原 --args-file**，否则 args precondition mismatch：
+  "$OMEGA" run "$(J workflow)" --args-file "$(J argsFile)" --resume "$(J runId)"
+  # 只想看不续跑：后台起看板再开上面 dashboard 地址（前台 serve 会阻塞）： "$OMEGA" serve >/dev/null 2>&1 &
   ```
 
 - 收尾后清理：`"$OMEGA" runs --prune-stale` 清掉已死的 run。
@@ -289,4 +301,4 @@ git -C "$REPO_ROOT" worktree remove "$WT" && git -C "$REPO_ROOT" branch -d "code
 
 ## 恢复协议
 
-会话中断后再进入：扫 `$REPO_ROOT/.runtime/codex-dev/*/state.json` 按 phase 续跑（`dispatched` 且 events 无 `turn.completed` → 查 codex 进程是否还在；`rework-N` → 重新验收；`accepted` → 进合并）。omega 轨读 `.runtime/codex-dev/omega-run.json` 拿 runId/dashboard，`"$OMEGA" runs` 看是否在跑，`--resume <runId>` 续跑未完成部分（详见「后台运行与重连」）。worktree 与 thread_id 都在状态文件里，无需重派。
+会话中断后再进入：扫 `$REPO_ROOT/.runtime/codex-dev/*/state.json` 按 phase 续跑（`dispatched` 且 events 无 `turn.completed` → 查 codex 进程是否还在；`rework-N` → 重新验收；`accepted` → 进合并）。omega 轨读 `.runtime/codex-dev/<BATCH>-run.json` 拿 runId/dashboard/argsFile，`"$OMEGA" runs` 看是否在跑，`run <workflow> --args-file <argsFile> --resume <runId>` 续跑未完成部分（resume 必带回原 args，否则 precondition mismatch；详见「后台运行与重连」）。worktree 与 thread_id 都在状态文件里，无需重派。

@@ -29,6 +29,11 @@
 - `codex-dev`：并发轨 runId 改为从 `omega-run.log` 的 `view:` 行解析（含真实端口），
   替代按 workflow 文件名匹配 `omegacode runs`（多个同名 run 会认错）。
 - `codex-dev`：重连片段补回 `OMEGA` 探测使其自包含；`codex --version` 仅在 codex 存在时执行。
+- `codex-dev`：codex 评审修复一批并发轨健壮性问题（均对 omegacode 源码验证）——
+  resume 改用 `--args-file` 带回原 args（否则 `checkResumePreconditions` 因 args 不一致拒绝续跑）；
+  `VIEW` 解析失败时硬停、不写空记录；重连的 `serve` 改后台起（前台会阻塞 `--resume`）；
+  omega 检测/重连找不到即停；并发产物按 `<BATCH>` 前缀每批独立（不再互相覆盖）；
+  `omega-run.json` 改用 python3 安全生成（路径含特殊字符不再损坏）；Step 0 增检 `python3`。
 
 ## [0.1.0] - 2026-06-13
 
