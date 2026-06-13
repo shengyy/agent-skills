@@ -60,3 +60,13 @@ npx skills add . --skill <new-skill-name> --copy
 - `SKILL.md` 的 `name` 必须等于目录名。
 - 不要把机密、令牌、个人路径写进 SKILL.md（会被公开）。
 - 提交信息遵循简洁的祈使句；一个 PR 聚焦一件事。
+
+## 发布新版本
+
+版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。发布时一起做三件事，然后打 tag：
+
+1. 把 `CHANGELOG.md` 的 `[Unreleased]` 内容归到新版本段（如 `## [0.3.0] - YYYY-MM-DD`），并补回一个空的 `[Unreleased]`；更新底部的对比链接。
+2. 更新根目录 `VERSION` 文件为新版本号。
+3. 提交后打 tag 并推送：`git tag v0.3.0 && git push origin v0.3.0`。
+
+README 顶部的版本徽章是动态读最新 git tag 的（`img.shields.io/github/v/tag`），打完 tag 会自动更新，无需手改。使用者用 `npx skills update -g` 即可拉到最新。

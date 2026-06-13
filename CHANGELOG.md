@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-13
+
 ### Added
 
 - SVG 仓库横幅 `assets/banner.svg`，展示在 README 顶部。
@@ -71,5 +73,6 @@
 - `scripts/validate_skills.py` 校验脚本 + `validate-skills` GitHub Action，
   自动校验每个 `SKILL.md` 的 frontmatter。
 
-[Unreleased]: https://github.com/shengyy/agent-skills/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/shengyy/agent-skills/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/shengyy/agent-skills/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/shengyy/agent-skills/releases/tag/v0.1.0
