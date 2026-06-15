@@ -35,6 +35,7 @@ npx skills add shengyy/agent-skills -l
 | Skill | What it does | Requires |
 |---|---|---|
 | [`codex-dev`](skills/codex-dev/) | A full loop for delegating dev tasks to the OpenAI Codex CLI: Claude plans, writes the task brief, orchestrates concurrency, runs mechanical acceptance + review + merge; Codex writes the code in a `workspace-write` sandbox. | `codex` CLI (required), `omegacode` (optional — concurrent track) |
+| [`codex-dev-native`](skills/codex-dev-native/) | The same delegation loop on the **official Codex plugin's native `codex-companion` engine** (no omegacode): Claude orchestrates + reviews + merges, Codex implements under `workspace-write` (writes confined to cwd, network on). Launch / background / status / result / cancel / resume are all native. | `codex` CLI + the `codex@openai-codex` Claude Code plugin |
 
 ### codex-dev
 
@@ -60,11 +61,49 @@ The concurrent track runs as a **detached background job with a live dashboard**
 
 ![omegacode dashboard — concurrent codex tasks](assets/dashboard.png)
 
+### codex-dev-native
+
+The same delegation loop as `codex-dev`, but the execution engine is the **official Codex plugin** (`codex@openai-codex`) instead of omegacode. Claude still owns orchestration, mechanical acceptance, personal review, and merge; Codex still only implements. The difference is everything under the hood — launch, background execution, status / result / cancel, same-thread resume, and crash recovery — is the plugin's native per-repo job registry, so the skill carries no hand-rolled dispatch or reconnect plumbing.
+
+**Prerequisites:**
+
+```bash
+# 1. codex CLI (required)
+npm install -g @openai/codex
+codex login
+
+# 2. the official Codex plugin for Claude Code (this is the engine)
+claude plugin install codex@openai-codex --scope user
+```
+
+> Sandbox: Codex runs under `workspace-write` (the only mode the plugin gives a write task) — writes are confined to the task's cwd and the OS blocks escape. To let Codex fetch docs / install deps, enable network for that mode in `~/.codex/config.toml`:
+>
+> ```toml
+> [sandbox_workspace_write]
+> network_access = true
+> ```
+>
+> This only applies when workspace-write is active, so it leaves your interactive Codex untouched.
+
+**Parallel without a daemon:** Claude fires N native background jobs (one per worktree) and tracks them via `status` / `result`. There is no separate dashboard process — the job registry persists on disk per repo, so a new session reattaches just by running `status`.
+
+**codex-dev vs codex-dev-native** — pick by engine:
+
+| | `codex-dev` | `codex-dev-native` |
+|---|---|---|
+| Engine | omegacode | official `codex@openai-codex` plugin |
+| Parallel fan-out | omega `parallel()` + live web dashboard | Claude orchestrates N native background jobs |
+| Reconnect / recovery | recorded run ID + `run.json` | native per-repo job registry |
+| Extra dependency | `omegacode` | the codex plugin |
+
+Prefer `codex-dev-native` when the official plugin is installed; keep `codex-dev` when you want omega's live dashboard or already run on omega.
+
 ## Usage
 
 ```bash
 # After installing, in a Claude Code session:
-/codex-dev refactor the login flow in src/auth to OAuth
+/codex-dev refactor the login flow in src/auth to OAuth          # omegacode engine
+/codex-dev-native refactor the login flow in src/auth to OAuth   # native codex-plugin engine
 # or natural language: "hand this to codex" / "fan out a few codex tasks for A, B, C"
 ```
 
@@ -84,8 +123,10 @@ agent-skills/
 │   ├── workflows/validate-skills.yml
 │   └── pull_request_template.md
 └── skills/
-    └── codex-dev/
-        └── SKILL.md        # a single self-contained skill (frontmatter: name + description)
+    ├── codex-dev/
+    │   └── SKILL.md        # delegation loop on the omegacode engine
+    └── codex-dev-native/
+        └── SKILL.md        # delegation loop on the native codex plugin engine
 ```
 
 Each skill lives in its own `skills/<name>/` directory with at least a `SKILL.md`; add `scripts/`, `references/`, etc. as needed — they travel with the install.

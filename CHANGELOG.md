@@ -7,7 +7,15 @@
 
 ## [Unreleased]
 
-## [0.2.1] - 2026-06-13
+### Added
+
+- **新 skill `codex-dev-native`**：与 `codex-dev` 同一套派工闭环（分解 / 隔离 / 派工 / 验收 / Claude 亲审 / 返工 / 合并），
+  但执行引擎换成**官方 Codex 插件的原生 `codex-companion` 运行时**（`codex@openai-codex`），不再依赖 omegacode。
+  起任务 / 后台 / status / result / cancel / 同线程续跑 / 崩溃恢复全部走插件的每仓库原生 job 注册表——
+  扔掉手搓的 workflow.js / args.json / run.json / 日志轮询 / 重连台账整套管道。沙箱按官方口径 `workspace-write`
+  （写限 cwd、OS 挡越界）+ `[sandbox_workspace_write] network_access = true` 开网消除离线痛；禁 git / 写范围
+  等沙箱不覆盖的约束下沉到派工红线 + 事后校验。已实测：原生引擎自启、workspace-write+网络生效、禁 git 守约、
+  写限 cwd、双后台任务真并发。`codex-dev`（omega 引擎）保留，二者按引擎并存。
 
 ### Fixed
 
