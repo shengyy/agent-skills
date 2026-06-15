@@ -63,7 +63,7 @@ omegacode doctor   # 验证 codex worker 就绪
 
 ### codex-dev-native
 
-与 `codex-dev` 同一套派工闭环，区别只在**执行引擎换成官方 Codex 插件**（`codex@openai-codex`），不再用 omegacode。Claude 依旧负责编排、机械验收、亲自评审、合并；codex 依旧只实施。底层的起任务、后台执行、status / result / cancel、同线程续跑、崩溃恢复——全部交给插件的**每仓库原生 job 注册表**，所以这个 skill 不带任何手搓的派工 / 重连管道。
+与 `codex-dev` 同一套派工闭环，区别只在**执行引擎换成官方 Codex 插件**（`codex@openai-codex`），不再用 omegacode。Claude 依旧负责编排、机械验收、亲自评审、合并；codex 依旧只实施。底层的起任务、后台执行、status / result / cancel、同线程续跑——全部交给插件的**每仓库原生注册表**，所以这个 skill 不带任何手搓的派工管道。原生 job 是**会话作用域**（不跨 Claude 会话存活）；skill 如实照搬这一点，不另建跨会话恢复。
 
 **前置依赖：**
 
@@ -85,7 +85,7 @@ claude plugin install codex@openai-codex --scope user
 >
 > 只在 workspace-write 激活时生效，不影响你的交互式 codex。
 
-**无守护进程的并发：** Claude 起 N 个原生后台任务（每 worktree 一个），用 `status` / `result` 追踪。没有单独的 dashboard 进程——job 注册表按仓库落盘,新会话只要跑 `status` 即可重连。
+**无守护进程的并发：** Claude 起 N 个原生后台任务（每 worktree 一个），用 `status <id> --wait` / `result` 等待。没有单独 dashboard 进程。原生 job 是**会话作用域**——插件在 `SessionEnd` 结束它们，不跨 Claude 会话存活，skill 不另加跨会话层。要让长任务跨会话存活，用 omega 的 `codex-dev`。
 
 **codex-dev 还是 codex-dev-native——按引擎选：**
 
@@ -93,7 +93,7 @@ claude plugin install codex@openai-codex --scope user
 |---|---|---|
 | 引擎 | omegacode | 官方 `codex@openai-codex` 插件 |
 | 并行 fan-out | omega `parallel()` + 实时网页 dashboard | Claude 编排 N 个原生后台任务 |
-| 重连 / 恢复 | 落盘 runId + `run.json` | 原生每仓库 job 注册表 |
+| 跨会话恢复 | runId + `run.json` → `--resume` | 无 —— 原生 job 是会话作用域 |
 | 额外依赖 | `omegacode` | codex 插件 |
 
 装了官方插件就优先用 `codex-dev-native`；想要 omega 的实时 dashboard、或已经在 omega 上跑，就留 `codex-dev`。

@@ -63,7 +63,7 @@ The concurrent track runs as a **detached background job with a live dashboard**
 
 ### codex-dev-native
 
-The same delegation loop as `codex-dev`, but the execution engine is the **official Codex plugin** (`codex@openai-codex`) instead of omegacode. Claude still owns orchestration, mechanical acceptance, personal review, and merge; Codex still only implements. The difference is everything under the hood — launch, background execution, status / result / cancel, same-thread resume, and crash recovery — is the plugin's native per-repo job registry, so the skill carries no hand-rolled dispatch or reconnect plumbing.
+The same delegation loop as `codex-dev`, but the execution engine is the **official Codex plugin** (`codex@openai-codex`) instead of omegacode. Claude still owns orchestration, mechanical acceptance, personal review, and merge; Codex still only implements. The difference is everything under the hood — launch, background execution, status / result / cancel, same-thread resume — is the plugin's native per-repo registry, so the skill carries no hand-rolled dispatch plumbing. Native job state is **session-scoped** (it does not survive the Claude session ending); the skill mirrors that rather than rebuilding cross-session recovery.
 
 **Prerequisites:**
 
@@ -85,7 +85,7 @@ claude plugin install codex@openai-codex --scope user
 >
 > This only applies when workspace-write is active, so it leaves your interactive Codex untouched.
 
-**Parallel without a daemon:** Claude fires N native background jobs (one per worktree) and tracks them via `status` / `result`. There is no separate dashboard process — the job registry persists on disk per repo, so a new session reattaches just by running `status`.
+**Parallel without a daemon:** Claude fires N native background jobs (one per worktree) and waits on each with `status <id> --wait` / `result`. No separate dashboard process. Native jobs are **session-scoped** — the plugin ends them on `SessionEnd`, so they don't outlive the Claude session, and the skill adds no cross-session layer. If you need a long job to survive the session, that's omega's `codex-dev`.
 
 **codex-dev vs codex-dev-native** — pick by engine:
 
@@ -93,7 +93,7 @@ claude plugin install codex@openai-codex --scope user
 |---|---|---|
 | Engine | omegacode | official `codex@openai-codex` plugin |
 | Parallel fan-out | omega `parallel()` + live web dashboard | Claude orchestrates N native background jobs |
-| Reconnect / recovery | recorded run ID + `run.json` | native per-repo job registry |
+| Cross-session recovery | run ID + `run.json` → `--resume` | none — native jobs are session-scoped |
 | Extra dependency | `omegacode` | the codex plugin |
 
 Prefer `codex-dev-native` when the official plugin is installed; keep `codex-dev` when you want omega's live dashboard or already run on omega.

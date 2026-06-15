@@ -5,7 +5,7 @@ description: Full loop for delegating development tasks to the OpenAI Codex CLI 
 
 # /codex-dev-native — delegate-to-codex development loop (native engine)
 
-**Engine = the official Codex plugin's `codex-companion` runtime** (plugin `codex@openai-codex`). Claude does NOT hand-roll dispatch, background jobs, reconnect, or crash recovery — the native per-repo job registry owns all of that. Claude's job is the orchestration + governance shell around it: decompose, isolate, dispatch, accept, **review personally**, rework, merge. The flow advances on its own and only stops to ask the user when BLOCKED, when a merge conflict needs a ruling, or when something would cross the role boundary. Report a one-line progress update on every task state change.
+**Engine = the official Codex plugin's `codex-companion` runtime** (plugin `codex@openai-codex`). Claude does NOT hand-roll dispatch, background execution, job tracking, or status/result plumbing — the native per-repo registry owns that. (One limit to know up front: native jobs are *session-scoped* — they don't survive the Claude session ending; see Step 4.) Claude's job is the orchestration + governance shell around it: decompose, isolate, dispatch, accept, **review personally**, rework, merge. The flow advances on its own and only stops to ask the user when BLOCKED, when a merge conflict needs a ruling, or when something would cross the role boundary. Report a one-line progress update on every task state change.
 
 **Restrictions follow exactly what the native engine enforces, plus brief red-lines for the rest.** codex runs under **workspace-write** — the only sandbox codex-companion gives a write task: the OS confines writes to its cwd and blocks escape, and network is on so codex can fetch docs / install project deps (this is what removes the offline pain). Anything the sandbox does NOT cover — no git writes, the write-scope allowlist *within* the cwd, no global installs — is enforced through the brief's hard constraints + post-hoc verification. **Never pass `danger-full-access`.**
 
@@ -14,7 +14,7 @@ description: Full loop for delegating development tasks to the OpenAI Codex CLI 
 | Concern | Owner |
 |---|---|
 | launch codex, background exec, running/stuck/done state, fetch result, cancel, resume-same-thread | **native** `codex-companion` — `task` / `status` / `result` / `cancel` / `task --resume-last` |
-| reconnect & crash recovery | **native** — the per-repo job registry persists across turns/sessions; a new session just runs `status` / `result` |
+| job tracking **within a session** (across turns) | **native** — `status` / `result` / `status <id> --wait` over the per-repo registry; **not** cross-session — `SessionEnd` terminates the session's jobs (see Step 4) |
 | decompose & tiers, concurrency decision, worktree isolation, mechanical acceptance, **personal review**, rework loop, merge | **Claude** |
 
 ## Step 0: Engine resolution & preflight
@@ -30,6 +30,7 @@ mkdir -p "$REPO_ROOT/.runtime/codex-dev"
 ```
 
 - `CODEX_PLUGIN_NOT_FOUND` → stop; install the plugin first (`claude plugin install codex@openai-codex --scope user`).
+- The engine path is found by globbing the plugin cache **on purpose**: this is its own skill, not a component of the codex plugin, so `${CLAUDE_PLUGIN_ROOT}` does not point at the codex plugin here — locating the installed `codex-companion.mjs` is how a standalone skill drives the native engine.
 - `setup --json` reports codex readiness; if it says unauthenticated → stop and have the user run `codex login`.
 - **Sandbox/network config (one-time per machine):** codex-companion forces `workspace-write` for write tasks, which is offline by default. To let codex fetch docs / install deps, `~/.codex/config.toml` needs network enabled under workspace-write:
   ```toml
@@ -114,32 +115,36 @@ The worktree needs its own environment. With network on, the simplest path is to
 
 ## Step 4: Dispatch (native — no plumbing)
 
-**Single short task** — foreground; the command prints codex's output directly and returns when done:
+Pass the brief with `--prompt-file` (native; robust for long or special-char briefs — do not shell-interpolate `cat`):
+
+**Single short task** — foreground; prints codex's output directly and returns when done:
 
 ```bash
-( cd "$WORK" && node "$CC" task --write --effort <tier> "$(cat "$REPO_ROOT/.runtime/codex-dev/$SLUG/brief.md")" )
+( cd "$WORK" && node "$CC" task --write --effort <tier> --prompt-file "$REPO_ROOT/.runtime/codex-dev/$SLUG/brief.md" )
 ```
 
 **Long task, or any parallel batch** — background; returns a jobId immediately:
 
 ```bash
-( cd "$WORK" && node "$CC" task --background --write --effort <tier> "$(cat "$REPO_ROOT/.runtime/codex-dev/$SLUG/brief.md")" )
-# -> "Codex Task started in the background as <jobId>. Check /codex:status <jobId> for progress."
+( cd "$WORK" && node "$CC" task --background --write --effort <tier> --prompt-file "$REPO_ROOT/.runtime/codex-dev/$SLUG/brief.md" )
+# -> "Codex Task started in the background as <jobId>."
 ```
 
-Track jobs — **this IS the reconnect/recovery layer**; the registry is per-repo and persists across turns and sessions, so there is no run.json/state.json to maintain:
+Track jobs via the native per-repo registry:
 
 ```bash
-( cd "$WORK" && node "$CC" status )            # all jobs for this workspace (id / kind / status / phase / elapsed)
-( cd "$WORK" && node "$CC" status <jobId> )    # one job in full
-( cd "$WORK" && node "$CC" result <jobId> )    # final output once completed
-( cd "$WORK" && node "$CC" cancel <jobId> )    # kill a running job
+( cd "$WORK" && node "$CC" status )                                      # THIS SESSION's jobs in $WORK (id / status / phase / elapsed)
+( cd "$WORK" && node "$CC" status <jobId> )                              # one job in full (resolves by id, even across sessions)
+( cd "$WORK" && node "$CC" status <jobId> --wait --timeout-ms 1800000 ) # BLOCK until it settles — native wait, do NOT hand-roll a poll loop
+( cd "$WORK" && node "$CC" result <jobId> )                              # final output once completed
+( cd "$WORK" && node "$CC" cancel <jobId> )                             # kill a running job
 ```
 
-- **Parallel batch**: fire one background `task` per task from its worktree cwd; keep each `{slug, worktree, jobId}`; then poll each worktree's `status` until done and pull `result`. Background jobs are independent detached workers — they run concurrently.
-- **Stuck watchdog (Claude-driven):** while polling, if a job stays `running` well past a sane ceiling (~30 min) with no phase change, `cancel <jobId>`, mark the task blocked, and report it by name. Never wait indefinitely.
-- A failed/blocked job is reported by name and reworked; sibling tasks are unaffected.
-- The structured completion report from codex is a lead, **not a conclusion** — acceptance re-derives everything from the diff.
+- **Registry scope — know this:** the registry is per-repo on disk but **session-scoped in practice**. `status` with no id lists only the *current Claude session's* jobs (`--all` only widens the recent-finished count, it does not lift the session filter). And the plugin's `SessionEnd` hook **terminates this session's still-running jobs and removes them** — a background job does **not** survive the Claude session ending (the same caveat as omega's "the run dies with the session"; unlike omega, there is no `--resume` to revive it — see Recovery). Keep the session alive while a long job runs.
+- **Wait natively, don't poll-loop:** block on `status <jobId> --wait --timeout-ms <ms>`. If it returns still-`running` past a sane ceiling (~30 min) with no phase change, `cancel <jobId>`, mark the task blocked, report it by name. Never wait indefinitely.
+- **Parallel batch**: fire one background `task` per task from its worktree cwd; keep each `{slug, worktree, jobId}`; wait on each with `status <jobId> --wait` and pull `result`. Background jobs are independent detached workers — they run concurrently.
+- Add `--json` to `task` / `status` / `result` / `cancel` for machine-readable output instead of parsing text.
+- A failed/blocked job is reported by name and reworked; sibling tasks are unaffected. The structured completion report from codex is a lead, **not a conclusion** — acceptance re-derives everything from the diff.
 
 ## Step 5: Mechanical acceptance (per task; any failure → Step 7 rework)
 
@@ -169,10 +174,10 @@ Independent judgment: verify key assertions in the code yourself; don't take cod
 Write review notes to `$REPO_ROOT/.runtime/codex-dev/<slug>/rework-<N>.md`: one per line "issue, location file:line, expected behavior, cited spec item"; if the reviewer touched the working tree (e.g. restored out-of-scope files), state it. Re-dispatch on the **same codex thread** with only the delta instruction:
 
 ```bash
-( cd "$WORK" && node "$CC" task --resume-last --write --effort <tier> "$(cat "$REPO_ROOT/.runtime/codex-dev/$SLUG/rework-$N.md")" )
+( cd "$WORK" && node "$CC" task --resume-last --write --effort <tier> --prompt-file "$REPO_ROOT/.runtime/codex-dev/$SLUG/rework-$N.md" )
 ```
 
-codex sees its prior changes on disk plus the thread context. Return to Step 5 after each round. 3 rounds without passing → mark `blocked`, stop that task, report to the user: what was tried, where it's stuck, two ways out (human intervention / Claude fixes it directly — the latter crosses the role boundary and needs the user's nod).
+`--resume-last` resumes the latest resumable thread **in this workspace** (`$WORK`), not one keyed by slug — so don't start another `task` in the same cwd between dispatch and rework, or it may resume the wrong thread. Parallel tasks live in separate worktrees (separate workspace roots), so each worktree's `--resume-last` is unambiguous. codex sees its prior changes on disk plus the thread context. Return to Step 5 after each round. 3 rounds without passing → mark `blocked`, stop that task, report to the user: what was tried, where it's stuck, two ways out (human intervention / Claude fixes it directly — the latter crosses the role boundary and needs the user's nod).
 
 ## Step 8: Merge & commit (Claude only — codex never touches git; the single serialization point)
 
@@ -197,14 +202,14 @@ git -C "$REPO_ROOT" worktree remove "$WT" && git -C "$REPO_ROOT" branch -d "code
 
 Final report: per task — tier and rework rounds, changed files and test results, commit hash, failed/blocked reasons and suggestions; token/usage if `status` reports it; task-list status update suggestions.
 
-## Recovery (re-entering after an interruption)
+## Recovery (within the session only)
 
-The native registry is the source of truth — no run.json/state.json scan needed:
+Native job state is **session-scoped — that is the engine's behavior, and this skill mirrors it rather than papering over it.** Within the Claude session, across turns, track jobs natively:
 
 ```bash
-CC=$(ls -td "$HOME"/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs | head -1)
-( cd "<repo-root-or-worktree>" && node "$CC" status )          # in-flight + finished jobs for that workspace
-( cd "<repo-root-or-worktree>" && node "$CC" result <jobId> )  # pull a finished job's output
+( cd "$WORK" && node "$CC" status )                  # this session's jobs in $WORK
+( cd "$WORK" && node "$CC" status <jobId> --wait )   # block on an in-flight one
+( cd "$WORK" && node "$CC" result <jobId> )          # finished job's output
 ```
 
-Then resume the loop by phase: still `running` → keep polling (Step 4 watchdog); `completed` → mechanical acceptance (Step 5); mid-rework → Step 7. Worktrees live on disk; `git -C "$REPO_ROOT" worktree list` enumerates them.
+When the Claude session ends, the `SessionEnd` hook ends the session's jobs — there is **no native cross-session resume, and we add none** (if you need a long job to outlive the session, that is omega's `codex-dev`). A task interrupted mid-flight just leaves its branch and on-disk edits in git; pick it up by dispatching it again (Step 4).
