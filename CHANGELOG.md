@@ -7,6 +7,33 @@
 
 ## [Unreleased]
 
+### Added
+
+- **新 skill `codex-dev-native`**：与 `codex-dev` 同一套派工闭环（分解 / 隔离 / 派工 / 验收 / Claude 亲审 / 返工 / 合并），
+  但执行引擎换成**官方 Codex 插件的原生 `codex-companion` 运行时**（`codex@openai-codex`），不再依赖 omegacode。
+  起任务 / 后台 / status / result / cancel / 同线程续跑走插件的每仓库原生注册表（会话作用域）——
+  扔掉手搓的 workflow.js / args.json / run.json / 日志轮询 / 重连台账整套管道。沙箱按官方口径 `workspace-write`
+  （写限 cwd、OS 挡越界）+ `[sandbox_workspace_write] network_access = true` 开网消除离线痛；禁 git / 写范围
+  等沙箱不覆盖的约束下沉到派工红线 + 事后校验。已实测：原生引擎自启、workspace-write+网络生效、禁 git 守约、
+  写限 cwd、双后台任务真并发。`codex-dev`（omega 引擎）保留，二者按引擎并存。
+
+### Changed
+
+- `codex-dev` & `codex-dev-native`：**隔离改为「与并发成正比」**——去掉强制 worktree 隔离与「是否隔离」的门禁。
+  单任务 / 串行批量默认留在主仓分支（环境全、能读整仓、缺啥联网装）；主仓有无关改动改为先 `commit`/`stash`
+  而非强开 worktree；worktree 只在**真并发**（同时跑 ≥2 个 codex）或用户想边跑边在主仓改时才用，且 worktree
+  环境优先让 codex 联网自建。解决「隔离的 worktree 反而接不到主仓依赖」的摩擦。omega 版同步把 Step 3 旧的
+  「沙箱离线、env 须 Claude 预装」更正为 workspace-write 开网。
+
+### Fixed
+
+- `codex-dev-native`：codex 读官方 `codex-companion` 源对整篇做符合性审计后据实修正——原生 job 是
+  **会话作用域**（插件 `SessionEnd` hook 杀+清本会话 job，不跨会话），之前误写的「跨会话注册表重连」改为
+  如实照搬官方行为、不自建跨会话恢复（少能力无妨，跨会话长任务用 omega 版）；`status` 默认按 session 过滤
+  （`--all` 只改显示条数、不取消过滤）已据实改写；采纳原生 `--prompt-file` / `status <id> --wait --timeout-ms`
+  / `--json` 替掉手搓的 `cat` 注入与 bash 轮询；`--resume-last` 同 workspace 歧义已注明；CC path glob 保留
+  并注明原因（独立 skill 拿不到 codex 插件的 `CLAUDE_PLUGIN_ROOT`）。
+
 ## [0.2.1] - 2026-06-13
 
 ### Fixed

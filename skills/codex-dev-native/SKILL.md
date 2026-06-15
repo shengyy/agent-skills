@@ -1,0 +1,215 @@
+---
+name: codex-dev-native
+description: Full loop for delegating development tasks to the OpenAI Codex CLI on the official Codex plugin's native codex-companion engine. Claude orchestrates (decompose, isolate, dispatch, accept, review, merge); codex only implements under a workspace-write sandbox where writes are confined to its cwd and network is on. The native engine owns launch / background / status / result / cancel / same-thread resume, so Claude never hand-rolls dispatch or reconnect. Use when the user says "delegate" / "hand it to codex" / "have codex implement|build <task>" / "fan out several codex tasks", or runs /codex-dev-native. This is the native-engine sibling of codex-dev (which runs on the omegacode engine) — prefer this one when the official codex plugin (codex@openai-codex) is installed. For review/consultation only use gstack-codex; for a bare one-off rescue with no acceptance/merge loop, the plugin's /codex:rescue is enough.
+---
+
+# /codex-dev-native — delegate-to-codex development loop (native engine)
+
+**Engine = the official Codex plugin's `codex-companion` runtime** (plugin `codex@openai-codex`). Claude does NOT hand-roll dispatch, background execution, job tracking, or status/result plumbing — the native per-repo registry owns that. (One limit to know up front: native jobs are *session-scoped* — they don't survive the Claude session ending; see Step 4.) Claude's job is the orchestration + governance shell around it: decompose, isolate, dispatch, accept, **review personally**, rework, merge. The flow advances on its own and only stops to ask the user when BLOCKED, when a merge conflict needs a ruling, or when something would cross the role boundary. Report a one-line progress update on every task state change.
+
+**Restrictions follow exactly what the native engine enforces, plus brief red-lines for the rest.** codex runs under **workspace-write** — the only sandbox codex-companion gives a write task: the OS confines writes to its cwd and blocks escape, and network is on so codex can fetch docs / install project deps (this is what removes the offline pain). Anything the sandbox does NOT cover — no git writes, the write-scope allowlist *within* the cwd, no global installs — is enforced through the brief's hard constraints + post-hoc verification. **Never pass `danger-full-access`.**
+
+## Native vs Claude — never rebuild the native side
+
+| Concern | Owner |
+|---|---|
+| launch codex, background exec, running/stuck/done state, fetch result, cancel, resume-same-thread | **native** `codex-companion` — `task` / `status` / `result` / `cancel` / `task --resume-last` |
+| job tracking **within a session** (across turns) | **native** — `status` / `result` / `status <id> --wait` over the per-repo registry; **not** cross-session — `SessionEnd` terminates the session's jobs (see Step 4) |
+| decompose & tiers, concurrency decision, worktree isolation, mechanical acceptance, **personal review**, rework loop, merge | **Claude** |
+
+## Step 0: Engine resolution & preflight
+
+```bash
+REPO_ROOT=$(git rev-parse --show-toplevel)
+CC=$(ls -td "$HOME"/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs 2>/dev/null | head -1)
+[ -n "$CC" ] || { echo "CODEX_PLUGIN_NOT_FOUND"; exit 1; }   # install: claude plugin install codex@openai-codex --scope user
+( cd "$REPO_ROOT" && node "$CC" setup --json )               # verifies codex CLI present + authenticated
+command -v git >/dev/null || echo "GIT_NOT_FOUND"
+git -C "$REPO_ROOT" status --porcelain | head -5
+mkdir -p "$REPO_ROOT/.runtime/codex-dev"
+```
+
+- `CODEX_PLUGIN_NOT_FOUND` → stop; install the plugin first (`claude plugin install codex@openai-codex --scope user`).
+- The engine path is found by globbing the plugin cache **on purpose**: this is its own skill, not a component of the codex plugin, so `${CLAUDE_PLUGIN_ROOT}` does not point at the codex plugin here — locating the installed `codex-companion.mjs` is how a standalone skill drives the native engine.
+- `setup --json` reports codex readiness; if it says unauthenticated → stop and have the user run `codex login`.
+- **Sandbox/network config (one-time per machine):** codex-companion forces `workspace-write` for write tasks, which is offline by default. To let codex fetch docs / install deps, `~/.codex/config.toml` needs network enabled under workspace-write:
+  ```toml
+  [sandbox_workspace_write]
+  network_access = true
+  ```
+  This only takes effect when workspace-write is the active sandbox, so it does not change the user's interactive codex behavior. If it is missing, add it before dispatching.
+- `.runtime/` and `.claude/worktrees/` should be in the project's `.gitignore`; add them if not.
+
+## Step 1: Task decomposition & tiers (orchestration — Claude's, first anti-collision gate)
+
+1. **Independence check**: estimate the files/modules each candidate task will touch. Disjoint file sets with no import/interface coupling → may run as **parallel background jobs**; any overlap or coupling → split into **separate ordered dispatches**, or merge into one task.
+2. **Dependency ordering**: B depends on A's output → dispatch B only after A is merged back to the main branch.
+3. **Concurrency**: Claude fires at most ~8 `task --background` jobs at once; the rest queue (Claude holds them and dispatches as slots free). Each is a real codex agent on API rate-limit budget.
+4. **Tiers** — set `--effort` per task (the model stays the config default unless the user names one; pass `--model` only when they do):
+
+| Tier | When | `--effort` |
+|---|---|---|
+| chore | config edits, mechanical refactors, docs | `low` |
+| normal (default) | single-module features, bug fixes, adding tests | `high` |
+| hard | cross-module design, money/accounting/matching core, concurrency & timing, performance | `xhigh` |
+
+Claude decides the tier and notes it in the dispatch progress report (e.g. "T9 backfill pipeline → xhigh").
+
+## Step 2: Write the task brief (red-lines become hard constraints)
+
+Write the brief to `$REPO_ROOT/.runtime/codex-dev/<slug>/brief.md` (slug = task id or a short English kebab-case name). **First read the project's CLAUDE.md / AGENTS.md / relevant spec docs and distill the project's red lines and quality constraints into the "Hard constraints" section** — the brief must be self-contained. Shape the prompt with the official **`codex:gpt-5-4-prompting`** guidance (XML-tagged task / output contract / verification loop / grounding rules).
+
+Because the sandbox only confines writes to the cwd, the brief carries everything else:
+
+```markdown
+# Task: <one-line goal>
+
+## Goals & acceptance criteria
+- <mechanically verifiable acceptance points, one per line>
+
+## Spec basis
+- <project spec doc §section: quote the key text, not just the number>
+- <verbatim task-list item>
+
+## Environment
+- cwd is <the main repo on branch codex/<slug> | this task's dedicated worktree>; build/test env is ready.
+- Network IS available — you may fetch docs or install project dependencies INTO this workspace. Do not install global tools, and do not touch anything outside the cwd.
+
+## Hard constraints
+1. No git operations whatsoever (commit/push/rebase/checkout/stash) — the reviewer owns all version control. (Git may also fail under the sandbox in a worktree; that is expected, do not retry.)
+2. Write scope is limited to <project implementer write-allowlist; else "within this repo" plus explicit no-go areas>; out-of-scope edits = task failure.
+3. <quality constraints and red lines distilled from the project's AGENTS.md/CLAUDE.md, one per line>
+4. New logic must come with tests; run <project lint/test command> yourself and pass before considering it done.
+
+## Completion report
+List: changed files, added tests, lint/test results, open items and known limitations.
+```
+
+## Step 3: Execution environment (Claude's)
+
+**Isolation is proportional to concurrency — nothing more.** A branch already gives logical isolation; a separate *worktree* only buys *physical* isolation, and you need that in exactly one case: running two or more codex jobs **at the same time** in the same repo (they would otherwise collide on files, caches, and git status — and a worktree costs a full environment rebuild). Everything else runs in the main working tree, which keeps the real environment and full reach into the repo — this is what avoids the "isolated worktree is missing the main repo's deps" trap. Do not force a worktree, and do not gate dispatch on being isolated.
+
+**Default — main working tree, one branch per task** (single tasks, and multi-task batches dispatched one after another); codex's cwd is the repo root:
+
+```bash
+SLUG=<slug>
+git -C "$REPO_ROOT" checkout -b "codex/$SLUG"
+WORK="$REPO_ROOT"
+```
+
+The main tree must be **clean** before dispatching here — never let codex's edits mix with the user's uncommitted work. If it is dirty:
+- changes are **unrelated** to the task → ask the user to commit or `git stash` first (this preserves the environment), then dispatch in the main tree;
+- changes **are** the task's baseline (the user got halfway and wants codex to continue) → build the branch on the current state; do not stash it away.
+
+**Concurrent parallel fan-out only — one worktree per task.** Reach for this solely when independent tasks should run **simultaneously** for wall-clock speed, or when the user wants to keep working in the main tree while a background job runs:
+
+```bash
+WT="$REPO_ROOT/.claude/worktrees/codex-$SLUG"
+git -C "$REPO_ROOT" worktree add "$WT" -b "codex/$SLUG" <main-branch>
+WORK="$WT"
+```
+
+The worktree needs its own environment. With network on, the simplest path is to have **codex build it itself** as the first step inside the worktree (`pip install -e .[dev]` / `npm install` / etc.); Claude pre-builds only when the setup is non-obvious. Editable-install caveat: a worktree must not share the main repo's editable venv (its paths point back at the main repo, so tests would run against main-repo code) — build a fresh one. Run the project lint/test once: **the baseline must be green** before dispatch.
+
+> Rule of thumb: dispatching one task, or fine running a batch sequentially → stay in the main tree. Reach for worktrees only to actually run things at the same time. Don't pay the per-worktree env-rebuild cost for isolation you won't use.
+
+## Step 4: Dispatch (native — no plumbing)
+
+Pass the brief with `--prompt-file` (native; robust for long or special-char briefs — do not shell-interpolate `cat`):
+
+**Single short task** — foreground; prints codex's output directly and returns when done:
+
+```bash
+( cd "$WORK" && node "$CC" task --write --effort <tier> --prompt-file "$REPO_ROOT/.runtime/codex-dev/$SLUG/brief.md" )
+```
+
+**Long task, or any parallel batch** — background; returns a jobId immediately:
+
+```bash
+( cd "$WORK" && node "$CC" task --background --write --effort <tier> --prompt-file "$REPO_ROOT/.runtime/codex-dev/$SLUG/brief.md" )
+# -> "Codex Task started in the background as <jobId>."
+```
+
+Track jobs via the native per-repo registry:
+
+```bash
+( cd "$WORK" && node "$CC" status )                                      # THIS SESSION's jobs in $WORK (id / status / phase / elapsed)
+( cd "$WORK" && node "$CC" status <jobId> )                              # one job in full (resolves by id, even across sessions)
+( cd "$WORK" && node "$CC" status <jobId> --wait --timeout-ms 1800000 ) # BLOCK until it settles — native wait, do NOT hand-roll a poll loop
+( cd "$WORK" && node "$CC" result <jobId> )                              # final output once completed
+( cd "$WORK" && node "$CC" cancel <jobId> )                             # kill a running job
+```
+
+- **Registry scope — know this:** the registry is per-repo on disk but **session-scoped in practice**. `status` with no id lists only the *current Claude session's* jobs (`--all` only widens the recent-finished count, it does not lift the session filter). And the plugin's `SessionEnd` hook **terminates this session's still-running jobs and removes them** — a background job does **not** survive the Claude session ending (the same caveat as omega's "the run dies with the session"; unlike omega, there is no `--resume` to revive it — see Recovery). Keep the session alive while a long job runs.
+- **Wait natively, don't poll-loop:** block on `status <jobId> --wait --timeout-ms <ms>`. If it returns still-`running` past a sane ceiling (~30 min) with no phase change, `cancel <jobId>`, mark the task blocked, report it by name. Never wait indefinitely.
+- **Parallel batch**: fire one background `task` per task from its worktree cwd; keep each `{slug, worktree, jobId}`; wait on each with `status <jobId> --wait` and pull `result`. Background jobs are independent detached workers — they run concurrently.
+- Add `--json` to `task` / `status` / `result` / `cancel` for machine-readable output instead of parsing text.
+- A failed/blocked job is reported by name and reworked; sibling tasks are unaffected. The structured completion report from codex is a lead, **not a conclusion** — acceptance re-derives everything from the diff.
+
+## Step 5: Mechanical acceptance (per task; any failure → Step 7 rework)
+
+1. **Out-of-scope check** (workspace-write confines writes to the cwd, but scope *within* the cwd is on us):
+
+```bash
+git -C "$WORK" status --porcelain | cut -c4- | grep -vE '^(<project write-allowlist regex>)' || echo SCOPE_OK
+```
+
+Out-of-scope files: tracked → `git -C "$WORK" checkout -- <file>`, untracked → delete; name them in the rework notes. Also confirm codex made **no commits** (the no-git red line).
+
+2. **lint + test** in `$WORK`; keep failing output verbatim as rework material.
+
+## Step 6: Review (Claude does it personally — RED LINE: never delegate back to codex)
+
+This is exactly why we wrap the native engine instead of just calling `/codex:review`. Go through `git -C "$WORK" diff` + new files item by item:
+
+- Project review checklist (distilled from the project's CLAUDE.md — e.g. one repo's three: "matching rules each map through / agentio time-gate no leak / journal insert-only").
+- Project red-line scan (e.g. automation paths forbid `dry_run=false`); no silent fallback / swallowed exceptions / fabricated defaults.
+- Quality thresholds (e.g. AGENTS.md file/function line limits, no generic-name modules).
+- Each acceptance criterion in the brief vs the implementation + tests; missing tests = not done.
+
+Independent judgment: verify key assertions in the code yourself; don't take codex's self-report at face value.
+
+## Step 7: Rework (≤3 rounds per task) — native same-thread resume
+
+Write review notes to `$REPO_ROOT/.runtime/codex-dev/<slug>/rework-<N>.md`: one per line "issue, location file:line, expected behavior, cited spec item"; if the reviewer touched the working tree (e.g. restored out-of-scope files), state it. Re-dispatch on the **same codex thread** with only the delta instruction:
+
+```bash
+( cd "$WORK" && node "$CC" task --resume-last --write --effort <tier> --prompt-file "$REPO_ROOT/.runtime/codex-dev/$SLUG/rework-$N.md" )
+```
+
+`--resume-last` resumes the latest resumable thread **in this workspace** (`$WORK`), not one keyed by slug — so don't start another `task` in the same cwd between dispatch and rework, or it may resume the wrong thread. Parallel tasks live in separate worktrees (separate workspace roots), so each worktree's `--resume-last` is unambiguous. codex sees its prior changes on disk plus the thread context. Return to Step 5 after each round. 3 rounds without passing → mark `blocked`, stop that task, report to the user: what was tried, where it's stuck, two ways out (human intervention / Claude fixes it directly — the latter crosses the role boundary and needs the user's nod).
+
+## Step 8: Merge & commit (Claude only — codex never touches git; the single serialization point)
+
+Merge passed tasks one at a time, **only one at a time**. Single-task main-tree branch mode: commit on the `codex/$SLUG` branch → switch back to the original branch and `merge --ff-only` → delete the task branch. Worktree mode runs the full flow:
+
+1. Integration check — merge the latest main branch into the task branch and re-verify:
+
+```bash
+git -C "$WT" merge <main-branch>   # simple conflicts: Claude resolves; semantic conflicts: rework that task (tell it the base moved); unsure → ask the user
+( cd "$WT" && <project lint/test command> )
+```
+
+2. Commit on the task branch: only `git add` files for this task, never `git add -A`; if the project has a structure self-check script, run it after add; follow the project's commit-message convention.
+3. Merge back to the main branch and clean up:
+
+```bash
+git -C "$REPO_ROOT" merge --ff-only "codex/$SLUG" || git -C "$REPO_ROOT" merge --no-ff "codex/$SLUG"
+git -C "$REPO_ROOT" worktree remove "$WT" && git -C "$REPO_ROOT" branch -d "codex/$SLUG"
+```
+
+4. Downstream tasks depending on this output can be dispatched only now.
+
+Final report: per task — tier and rework rounds, changed files and test results, commit hash, failed/blocked reasons and suggestions; token/usage if `status` reports it; task-list status update suggestions.
+
+## Recovery (within the session only)
+
+Native job state is **session-scoped — that is the engine's behavior, and this skill mirrors it rather than papering over it.** Within the Claude session, across turns, track jobs natively:
+
+```bash
+( cd "$WORK" && node "$CC" status )                  # this session's jobs in $WORK
+( cd "$WORK" && node "$CC" status <jobId> --wait )   # block on an in-flight one
+( cd "$WORK" && node "$CC" result <jobId> )          # finished job's output
+```
+
+When the Claude session ends, the `SessionEnd` hook ends the session's jobs — there is **no native cross-session resume, and we add none** (if you need a long job to outlive the session, that is omega's `codex-dev`). A task interrupted mid-flight just leaves its branch and on-disk edits in git; pick it up by dispatching it again (Step 4).
