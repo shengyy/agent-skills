@@ -17,6 +17,14 @@
   等沙箱不覆盖的约束下沉到派工红线 + 事后校验。已实测：原生引擎自启、workspace-write+网络生效、禁 git 守约、
   写限 cwd、双后台任务真并发。`codex-dev`（omega 引擎）保留，二者按引擎并存。
 
+### Changed
+
+- `codex-dev` & `codex-dev-native`：**隔离改为「与并发成正比」**——去掉强制 worktree 隔离与「是否隔离」的门禁。
+  单任务 / 串行批量默认留在主仓分支（环境全、能读整仓、缺啥联网装）；主仓有无关改动改为先 `commit`/`stash`
+  而非强开 worktree；worktree 只在**真并发**（同时跑 ≥2 个 codex）或用户想边跑边在主仓改时才用，且 worktree
+  环境优先让 codex 联网自建。解决「隔离的 worktree 反而接不到主仓依赖」的摩擦。omega 版同步把 Step 3 旧的
+  「沙箱离线、env 须 Claude 预装」更正为 workspace-write 开网。
+
 ### Fixed
 
 - `codex-dev`：修复 SKILL.md frontmatter 的 YAML 报错——`description` 里 `multi-agent: parallel`

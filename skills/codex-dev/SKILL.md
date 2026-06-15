@@ -83,17 +83,19 @@ The final message must list: changed-files list, added-tests list, lint/test res
 
 ## Step 3: Execution environment (second anti-collision gate)
 
-**Default to one branch per task; never develop directly on the main branch** (exception only if the user explicitly says "just change it on the current branch").
+**Isolation is proportional to concurrency.** A branch gives logical isolation; a *worktree* gives physical isolation, which omega needs in exactly one case: when it runs **two or more agents at the same time** (`parallel()`), since several codex agents in one working tree collide — git status can't be attributed, test caches conflict, and on rework codex "helpfully fixes" others' changes it sees. A single task, or tasks dispatched one after another, do not need a worktree. Do not force a worktree, and do not gate dispatch on being isolated.
 
-**Main working tree has uncommitted changes → classify before choosing the base**: if those changes ARE the baseline this task depends on (the user got halfway and wants codex to continue), opening a worktree off the main branch would make codex build on stale code and misalign the merge — you MUST stop and confirm with the user (commit first, or build the task branch on the current state as base); if the changes are unrelated to the task → then isolate off the main branch per the flow below.
-
-**A single task with a clean working tree** → create the task branch in the main working tree directly; the agent's `cwd` is the repo root (saves worktree + env-rebuild overhead):
+**Default — main working tree, one branch per task** (a single task, or a batch you run sequentially); the agent's `cwd` is the repo root (keeps the real env, skips the worktree + env-rebuild overhead):
 
 ```bash
 git -C "$REPO_ROOT" checkout -b "codex/$SLUG"   # the main working tree belongs to this task during dispatch
 ```
 
-**Multiple tasks (parallel agents), or a dirty working tree (unrelated changes)** → one worktree per task, physical isolation; each agent's `cwd` is its own worktree. Several agents in one working tree inevitably collide: git status can't be attributed, test caches conflict, and on rework codex will "helpfully fix" others' changes it sees. Conventions are unreliable; isolation is reliable:
+The main tree must be clean before dispatching here. If it is dirty:
+- changes are **unrelated** to the task → ask the user to commit or `git stash` first (preserves the env), then dispatch in the main tree;
+- changes **ARE** the task's baseline (the user got halfway and wants codex to continue) → build the branch on the current state; do not stash it away.
+
+**Concurrent fan-out (≥2 omega agents in `parallel()`) — one worktree per task**, each agent's `cwd` its own worktree:
 
 ```bash
 SLUG=<slug>
@@ -101,13 +103,9 @@ WT="$REPO_ROOT/.claude/worktrees/codex-$SLUG"
 git -C "$REPO_ROOT" worktree add "$WT" -b "codex/$SLUG" <main-branch>
 ```
 
-Then **rebuild the environment inside the worktree per the project's build method** (codex's sandbox is offline; the env must be pre-installed by Claude). Python caveat: if the project inside the main repo's venv is an editable install (site-packages has `__editable__*.pth`), its path is hard-coded to the main repo — the worktree **must build a fresh venv and reinstall**; sharing or copying makes tests run against the main-repo code:
+The worktree needs its own environment. omega's codex runs under `workspace-write` with network on, so the simplest path is to have **codex build the env itself** as the first step inside the worktree (`pip install -e .[dev]` / `npm install`); Claude pre-builds only when the setup is non-obvious. Editable-install caveat: a worktree must not share the main repo's editable venv (its path is hard-coded to the main repo, so tests would run against main-repo code) — build a fresh one. Then run the project's lint/test once inside the worktree: **the baseline must be green** — dispatching on red makes failures unattributable; if the baseline is red → fix the main branch first, don't dispatch.
 
-```bash
-python3 -m venv "$WT/<pkg>/.venv" && "$WT/<pkg>/.venv/bin/pip" install -q -e "$WT/<pkg>[dev]"
-```
-
-Finally run the project's lint/test once inside the worktree: **the baseline must be green** — dispatching on red makes failures unattributable; if the baseline is red → fix the main branch first, don't dispatch.
+> Rule of thumb: one task, or a sequential batch → main tree. Worktrees only to run agents at the same time. Don't pay the per-worktree env-rebuild cost for isolation you won't use.
 
 ## Step 4: Dispatch via omega
 

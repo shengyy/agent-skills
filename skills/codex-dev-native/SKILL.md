@@ -84,9 +84,11 @@ Because the sandbox only confines writes to the cwd, the brief carries everythin
 List: changed files, added tests, lint/test results, open items and known limitations.
 ```
 
-## Step 3: Execution environment (isolation — Claude's, second anti-collision gate)
+## Step 3: Execution environment (Claude's)
 
-**Single clean task (the common case)** → create the task branch in the main working tree; codex's cwd is the repo root. The real environment is already present, codex can read the whole repo, and network covers any missing deps — this sidesteps worktree env-fragility entirely:
+**Isolation is proportional to concurrency — nothing more.** A branch already gives logical isolation; a separate *worktree* only buys *physical* isolation, and you need that in exactly one case: running two or more codex jobs **at the same time** in the same repo (they would otherwise collide on files, caches, and git status — and a worktree costs a full environment rebuild). Everything else runs in the main working tree, which keeps the real environment and full reach into the repo — this is what avoids the "isolated worktree is missing the main repo's deps" trap. Do not force a worktree, and do not gate dispatch on being isolated.
+
+**Default — main working tree, one branch per task** (single tasks, and multi-task batches dispatched one after another); codex's cwd is the repo root:
 
 ```bash
 SLUG=<slug>
@@ -94,7 +96,11 @@ git -C "$REPO_ROOT" checkout -b "codex/$SLUG"
 WORK="$REPO_ROOT"
 ```
 
-**Parallel batch, or a dirty tree with unrelated changes** → one worktree per task (physical write isolation; concurrent codex agents in one tree collide on files, caches, and git status); each agent's cwd is its own worktree:
+The main tree must be **clean** before dispatching here — never let codex's edits mix with the user's uncommitted work. If it is dirty:
+- changes are **unrelated** to the task → ask the user to commit or `git stash` first (this preserves the environment), then dispatch in the main tree;
+- changes **are** the task's baseline (the user got halfway and wants codex to continue) → build the branch on the current state; do not stash it away.
+
+**Concurrent parallel fan-out only — one worktree per task.** Reach for this solely when independent tasks should run **simultaneously** for wall-clock speed, or when the user wants to keep working in the main tree while a background job runs:
 
 ```bash
 WT="$REPO_ROOT/.claude/worktrees/codex-$SLUG"
@@ -102,11 +108,9 @@ git -C "$REPO_ROOT" worktree add "$WT" -b "codex/$SLUG" <main-branch>
 WORK="$WT"
 ```
 
-With network on, codex can build its own environment inside the worktree; or Claude pre-builds it if the project needs a specific setup. Editable-install caveat: a worktree that shares the main repo's editable venv runs tests against main-repo code — build a fresh venv in the worktree. Then run the project lint/test once inside `$WORK`: **the baseline must be green** before dispatch, or failures are unattributable.
+The worktree needs its own environment. With network on, the simplest path is to have **codex build it itself** as the first step inside the worktree (`pip install -e .[dev]` / `npm install` / etc.); Claude pre-builds only when the setup is non-obvious. Editable-install caveat: a worktree must not share the main repo's editable venv (its paths point back at the main repo, so tests would run against main-repo code) — build a fresh one. Run the project lint/test once: **the baseline must be green** before dispatch.
 
-**Dirty main tree that IS the task's baseline** (the user got halfway and wants codex to continue) → do NOT isolate off the main branch; stop and confirm with the user (commit first, or build on the current state as base).
-
-**Default to one branch per task; never develop directly on the main branch** (exception only if the user explicitly says so).
+> Rule of thumb: dispatching one task, or fine running a batch sequentially → stay in the main tree. Reach for worktrees only to actually run things at the same time. Don't pay the per-worktree env-rebuild cost for isolation you won't use.
 
 ## Step 4: Dispatch (native — no plumbing)
 
