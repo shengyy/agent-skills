@@ -20,7 +20,7 @@ Built on the common [Agent Skills](https://github.com/anthropics/skills) format 
 npx skills add shengyy/agent-skills -g --all
 
 # Install just one
-npx skills add shengyy/agent-skills -g --skill codex-dev
+npx skills add shengyy/agent-skills -g --skill codex-construction
 
 # List the skills in this repo without installing
 npx skills add shengyy/agent-skills -l
@@ -34,121 +34,47 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | What it does | Requires |
 |---|---|---|
-| [`codex-dev`](skills/codex-dev/) | A full loop for delegating dev tasks to the OpenAI Codex CLI: Claude plans, writes the task brief, orchestrates concurrency, runs mechanical acceptance + review + merge; Codex writes the code in a `workspace-write` sandbox. | `codex` CLI (required), `omegacode` (optional — concurrent track) |
-| [`codex-dev-native`](skills/codex-dev-native/) | The same delegation loop on the **official Codex plugin's native `codex-companion` engine** (no omegacode): Claude orchestrates + reviews + merges, Codex implements under `workspace-write` (writes confined to cwd, network on). Launch / background / status / result / cancel / resume are all native. | `codex` CLI + the `codex@openai-codex` Claude Code plugin |
+| [`codex-construction`](skills/codex-construction/) | Lightweight delegation loop: the main agent owns the plan, Codex builds via bare `codex exec` — batched dispatch, three-state background monitoring, per-stage commits + acceptance packets, build-review cycles. Delegate fully, supervise only for over-engineering. | `codex` CLI (logged in) |
 
-### codex-dev
-
-A delegation loop: Claude plans, writes the task brief, orchestrates (serial `codex exec` / concurrent `omegacode` + worktree isolation), reviews, and merges; Codex only implements inside the sandbox. The flow advances automatically and pauses for you only when BLOCKED, when a merge conflict needs a ruling, or when something would cross role boundaries.
-
-**Prerequisites** (the skill is only the orchestrator — install the tools that do the real work yourself):
-
-```bash
-# 1. codex CLI (required)
-npm install -g @openai/codex
-codex login
-
-# 2. omegacode (optional — only for the concurrent track)
-npm install -g omegacode
-omegacode doctor   # verify the codex worker is ready
-```
-
-> Sandbox note: the delegation commands force `-s workspace-write` internally and don't rely on your global default. If your `~/.codex/config.toml` sets `danger-full-access`, just be aware — the skill overrides it explicitly.
-
-> Model: tasks run on **`gpt-5.5`** by default, at a reasoning effort chosen per task (`medium` / `high` / `xhigh`). To use a different model, just edit `model` / `defaultModel` in the skill.
-
-The concurrent track runs as a **detached background job with a live dashboard** — close your terminal and the run keeps going; any new session reattaches via the recorded run ID (no babysitting process required).
-
-![omegacode dashboard — concurrent codex tasks](assets/dashboard.png)
-
-### codex-dev-native
-
-The same delegation loop as `codex-dev`, but the execution engine is the **official Codex plugin** (`codex@openai-codex`) instead of omegacode. Claude still owns orchestration, mechanical acceptance, personal review, and merge; Codex still only implements. The difference is everything under the hood — launch, background execution, status / result / cancel, same-thread resume — is the plugin's native per-repo registry, so the skill carries no hand-rolled dispatch plumbing. Native job state is **session-scoped** (it does not survive the Claude session ending); the skill mirrors that rather than rebuilding cross-session recovery.
+### codex-construction
 
 **Prerequisites:**
 
 ```bash
-# 1. codex CLI (required)
 npm install -g @openai/codex
 codex login
-
-# 2. the official Codex plugin for Claude Code (this is the engine)
-claude plugin install codex@openai-codex --scope user
 ```
 
-> Sandbox: Codex runs under `workspace-write` (the only mode the plugin gives a write task) — writes are confined to the task's cwd and the OS blocks escape. To let Codex fetch docs / install deps, enable network for that mode in `~/.codex/config.toml`:
->
-> ```toml
-> [sandbox_workspace_write]
-> network_access = true
-> ```
->
-> This only applies when workspace-write is active, so it leaves your interactive Codex untouched.
+Hardened during a real full-day architecture overhaul (6 stages, 10k+ lines net deleted,
+three long unattended construction runs with zero hangs), then distilled into a skill.
+To switch model or reasoning effort, edit the single invocation line in SKILL.md.
 
-**Parallel without a daemon:** Claude fires N native background jobs (one per worktree) and waits on each with `status <id> --wait` / `result`. No separate dashboard process. Native jobs are **session-scoped** — the plugin ends them on `SessionEnd`, so they don't outlive the Claude session, and the skill adds no cross-session layer. If you need a long job to survive the session, that's omega's `codex-dev`.
+## Design philosophy (since v0.3)
 
-**codex-dev vs codex-dev-native** — pick by engine:
+v0.2's `codex-dev` / `codex-dev-native` were written for the previous model generation:
+sandbox plumbing, write allowlists, brief templates, concurrency registries — most of that
+volume re-did work the engine and the model can now do themselves, and it was the root
+cause of the constant hangs and silent stalls.
 
-| | `codex-dev` | `codex-dev-native` |
-|---|---|---|
-| Engine | omegacode | official `codex@openai-codex` plugin |
-| Parallel fan-out | omega `parallel()` + live web dashboard | Claude orchestrates N native background jobs |
-| Cross-session recovery | run ID + `run.json` → `--resume` | none — native jobs are session-scoped |
-| Extra dependency | `omegacode` | the codex plugin |
+Current-generation models (GPT‑5.6+ / Claude 5+) have capability to spare. Orchestration
+value collapses to three things: **division of labor, boundaries, acceptance**. So v0.3
+replaces both old skills with one ~100-line `codex-construction`:
 
-Prefer `codex-dev-native` when the official plugin is installed; keep `codex-dev` when you want omega's live dashboard or already run on omega.
-
-## Usage
-
-```bash
-# After installing, in a Claude Code session:
-/codex-dev refactor the login flow in src/auth to OAuth          # omegacode engine
-/codex-dev-native refactor the login flow in src/auth to OAuth   # native codex-plugin engine
-# or natural language: "hand this to codex" / "fan out a few codex tasks for A, B, C"
-```
-
-## Repository layout
-
-```
-agent-skills/
-├── README.md               # English
-├── README.zh-CN.md         # 简体中文
-├── CONTRIBUTING.md         # how to add a new skill
-├── CHANGELOG.md
-├── LICENSE
-├── assets/banner.svg
-├── scripts/
-│   └── validate_skills.py  # SKILL.md validation, shared by local + CI
-├── .github/
-│   ├── workflows/validate-skills.yml
-│   └── pull_request_template.md
-└── skills/
-    ├── codex-dev/
-    │   └── SKILL.md        # delegation loop on the omegacode engine
-    └── codex-dev-native/
-        └── SKILL.md        # delegation loop on the native codex plugin engine
-```
-
-Each skill lives in its own `skills/<name>/` directory with at least a `SKILL.md`; add `scripts/`, `references/`, etc. as needed — they travel with the install.
-
-## Adding a new skill
-
-```bash
-# 1. scaffold
-npx skills init skills/<new-skill-name>
-
-# 2. edit SKILL.md (name must equal the directory name; description must spell out when to trigger)
-
-# 3. validate locally
-python3 scripts/validate_skills.py
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full conventions. Once pushed, anyone can install it with `npx skills add shengyy/agent-skills -g --skill <new-skill-name>`.
+- **Delegate**: Codex is fully autonomous within a batch (read the contract, implement,
+  run gates, commit, write the acceptance packet). The prompt carries only five elements:
+  site / contract pointer / scope / true red lines / boundaries & delivery protocol.
+- **Supervise**: the systematic failure mode of unsupervised Codex is over-engineering —
+  the main agent intervenes only at plan rulings, per-batch acceptance, and BLOCKED
+  decisions. Never process management.
+- **Fewer constraints win**: the more implementation detail you pin down, the more often
+  the model is forced into second-best solutions. Real problems found mid-build may be
+  root-cause-fixed in scope, recorded in the acceptance packet.
 
 ## Contributing
 
-PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and conventions, and [CHANGELOG.md](CHANGELOG.md) for the history.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Every skill must pass
+`python scripts/validate_skills.py`.
 
 ## License
 
-[MIT](LICENSE) © 2026 shengyy
+[MIT](LICENSE)
