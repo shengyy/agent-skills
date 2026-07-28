@@ -82,7 +82,8 @@ nohup bash -c 'codex exec ... "$(cat PROMPT_FILE)"' > RUN.log 2>&1 & echo "pid=$
 - 审查用**全新 codex 会话**（独立性优先，不 resume 施工会话）；prompt 要求对抗式、
   按严重度分级、每条给复现路径；涉及数据/状态的审查喂只读副本接地，不连生产。
 - 修复轮可续上下文：`codex exec resume --last -m <model> -c sandbox_mode="danger-full-access" "<prompt>"`。
-  注意 resume 子命令**不接受 `-s`**（clap 直接拒收），沙箱只能经 `-c sandbox_mode` 传；`-m` 可用。
+  权限与施工轮完全一致（`-c sandbox_mode` 与 `-s` 是同一配置项的两种写法）；仅因 resume
+  子命令未实现 `-s` 快捷别名（clap 拒收），才改用 `-c` 通用写法，不是降级进沙箱。
 - 重大改动**按视角拆审**：正确性/回归、数据与状态安全、删除完整性（双轨残留）各起一个
   独立审查会话——一个通用审查会漏掉视角外的失败模式。
 - 收口判据用 **until-dry**：连续两轮审查无阻断性新发现才算干净；一轮干净就停会漏长尾。
