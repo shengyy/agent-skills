@@ -31,7 +31,6 @@ codex exec -m gpt-5.6-sol -c model_reasoning_effort="<high|xhigh>" -s danger-ful
 - 模型：`gpt-5.6-sol`（2026-07 当前最优；模型换代只改这一处）。裸传简称会被服务端 400 拒。
 - effort：`high` = 边界清楚的常规施工；`xhigh` = 架构级重构、资金/并发核心、对抗审查。
 - `danger-full-access` 没有沙箱兜底：**一切边界靠 prompt 写明**（见模板第 5 条）。
-- 不走插件 rescue 通道（受限沙箱会造成门禁假失败与假卡死）；插件里只有对抗审查 prompt 值得借鉴。
 
 ## 启动（launch-only 原则）
 
