@@ -109,14 +109,19 @@ nohup bash -c 'codex exec ... "$(cat PROMPT_FILE)"' > RUN.log 2>&1 & echo "pid=$
   换模型或换 agent 做交叉审同样成立（偏差不同源时发现率更高），此处只约束"独立会话"这一条。
   prompt 要求对抗式、
   按严重度分级、每条给复现路径；涉及数据/状态的审查喂只读副本接地，不连生产。
-- 修复轮可续上下文：`codex exec resume --last -m <model> -c sandbox_mode="danger-full-access" "<prompt>"`。
-  权限与施工轮完全一致（`-c sandbox_mode` 与 `-s` 是同一配置项的两种写法）；仅因 resume
-  子命令未实现 `-s` 快捷别名（clap 拒收），才改用 `-c` 通用写法，不是降级进沙箱。
-- **裸调起的会话用裸 CLI 续**：codex 插件（`/codex:*`）只认自己 job store 里的任务，裸调会话对它
-  不可见，用插件命令续不上。反向可行——插件任务给出的 session id 可以直接 `codex resume <session-id>`。
-- **插件报 `Task ... is still running` 但进程已经没了**：插件只读 job json 的 `status` 判活、不校验
-  进程存活，任务被外部杀掉时 status 会永远停在 `running`。这是上游缺陷，不是本机损坏，别去排查环境。
-  处置：把该 job json 的 `status` 改成 `failed`，或直接走裸 CLI。
+- 修复轮可续上下文，两个参数都不能省：
+
+  ```bash
+  codex exec resume --last -m <model> \
+    -c model_reasoning_effort="<high|xhigh>" -c sandbox_mode="danger-full-access" "<prompt>"
+  ```
+
+  **effort 必须显式重传**：resume 不继承原会话的 effort，漏传会静默掉回 `~/.codex/config.toml`
+  的默认档，整个修复轮白跑在最弱档上，且日志头部才看得出来（`reasoning effort:` 行）。
+  权限同理用 `-c sandbox_mode` 写，与 `-s` 是同一配置项——resume 子命令不收 `-s` 别名，
+  不是降级进沙箱。
+- **续接一律用裸 CLI**，不要改用 `/codex:*` 插件命令：插件只认自己 job store 里的任务，
+  裸调起的会话它看不见，续不上。
 - **`--last` 只在单会话时可靠**：它按 cwd 取最近一条，同一工作树跑过多个会话会续错。
   多会话并存时用 session id 显式指定（日志开头 `session id:` 行）。
 - **默认单路对抗审查**。普通改动首轮无阻断项即收口；若发现阻断项，修复后换全新会话复审，一轮干净即可。
