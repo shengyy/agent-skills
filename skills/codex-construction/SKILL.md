@@ -28,6 +28,7 @@ nohup bash -c 'codex exec -m gpt-5.6-sol -c model_reasoning_effort="high" \
 - prompt 先写文件再 `cat`，避免引号地狱。
 - **启动调用必须秒回**：同一次 Bash 里不得再带耗时前台命令——外层超时按进程组 SIGKILL，`nohup` 挡不住。
 - 运行中的日志不要 truncate。
+- **启动后立刻记下日志头部的 `session id:`**，修复轮要靠它续接。
 
 ## 监控：先等进程，再读日志
 
@@ -68,13 +69,14 @@ nohup bash -c 'codex exec -m gpt-5.6-sol -c model_reasoning_effort="high" \
 审查用**全新会话**保独立性，可换模型或换 agent 交叉审。修复轮才续上下文：
 
 ```bash
-codex exec resume --last -m <model> \
+codex exec resume <session-id> -m <model> \
   -c model_reasoning_effort="<high|xhigh>" -c sandbox_mode="danger-full-access" "<prompt>"
 ```
 
+- **必须用显式 session id，不要用 `--last`**：`--last` 只在当前 cwd 里找，找不到就**静默新开一个空会话**——exit 0、无警告、日志看不出异常，整个修复轮在零上下文下重跑。session id 跨 cwd 有效。
 - **effort 必须重传**：resume 不继承，漏传会静默掉回 config 默认档。（resume 不收 `-s` 别名，权限改用 `-c`，不是降级进沙箱。）
+- resume 后核对日志头部的 `session id:` 与原会话一致，不一致就是没续上。
 - 续接一律用裸 CLI，不要改用 `/codex:*`——插件看不见裸调起的会话。
-- `--last` 按 cwd 取最近一条；多会话并存时改用日志头部的 `session id:`。
 - 默认**单路**：首轮无阻断即收口；有阻断则修复后换新会话复审，一轮干净即可。触及不可逆资产或反复冒新阻断，才用 until-dry（连续两轮无新发现）。
 - **主代理必须抽验**：自己重跑关键门禁，不信日志里的 "passed"。
 - **熔断**：阻断性修复超 3 轮不收敛，或出现修 A 破 B 的振荡，立即停——那是方案错了，回方案层重裁，不是加轮次。
