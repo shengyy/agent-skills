@@ -19,13 +19,14 @@ codex 独干的系统性偏差是**过度工程**，所以主代理只在三处�
 
 ```bash
 nohup bash -c 'codex exec -m gpt-5.6-sol -c model_reasoning_effort="high" \
-  -s danger-full-access "$(cat PROMPT_FILE)"' > RUN.log 2>&1 & echo "pid=$!"
+  -s danger-full-access - < PROMPT_FILE' > RUN.log 2>&1 & echo "pid=$!"
 ```
 
 - effort：常规施工、定点修复、收口核验用 `high`；架构重构、资金/并发核心、全面对抗审用 `xhigh`。
 - 模型名以本机 `~/.codex/config.toml` 为准；换名先用 `codex exec -m <名字> "打印 ok"` 探针验证，400 即无效。
 - `danger-full-access` 无沙箱兜底，边界全靠 prompt 写明。
-- prompt 先写文件再 `cat`，避免引号地狱。
+- **合同必须走 stdin（`- < FILE`），不许 argv `"$(cat FILE)"`**：argv 会把合同全文泄进 `ps`，codex 一跑 `pgrep` 就看见「含本合同的 codex 进程」，认成别人起的施工会话，转去监控它——轮询自己零开工（2026-08-15 实锤：841 次 exec 里 828 次是 `kill -0` 自己，5 小时 0 commit）。stdin 形态 argv 零泄漏，日志回显不受影响。
+- 合同开头写**角色钉死**：你就是施工者本人，收到即开工；ps 里含本合同文本的进程就是你自己，忽略。
 - **启动调用必须秒回**：同一次 Bash 里不得再带耗时前台命令——外层超时按进程组 SIGKILL，`nohup` 挡不住。
 - 运行中的日志不要 truncate。
 - **启动后立刻记下日志头部的 `session id:`**，修复轮要靠它续接。
@@ -43,6 +44,7 @@ nohup bash -c 'codex exec -m gpt-5.6-sol -c model_reasoning_effort="high" \
 
 - `tokens used` 只代表**会话结束**，不代表完成——BLOCKED 也打印它。
 - **别直接 grep 标记**：codex 开跑会回显 prompt 原文，合同里的标记字样会在日志开头命中。用 `grep -n -x "tokens used" | tail -1` 定位收尾行，只解析其后的输出。
+- 日志反复对同一 pid `kill -0` / `ps` 轮询且 git 零 commit = **自我监控死锁**，立杀重派，别等终态。
 - 进程活着 + 日志静默 20 分钟 = 卡死告警，不是「停在阶段边界等裁决」——`codex exec` 是单轮进程，BLOCKED 后必然退出。
 
 ## Prompt 五要素
