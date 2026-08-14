@@ -1,6 +1,6 @@
 ---
 name: codex-construction
-description: 主代理出方案、Codex 裸调施工的轻量任务编排。把成型的施工任务（重构/新功能/批量修复/对抗审查）交给 codex exec 长时间自主执行：分批派工、后台三态监控、分阶段验收、改-审循环。用户说「安排 codex 施工/干活/审」或调用 /codex-construction 时使用。
+description: 主代理出方案、Codex 裸调施工的轻量任务编排。把成型的施工任务（重构/新功能/批量修复/对抗审查）交给 codex exec 长时间自主执行：分批派工、后台终态监控、分阶段验收、改-审循环。用户说「安排 codex 施工/干活/审」或调用 /codex-construction 时使用。
 ---
 
 # codex-construction — 轻量派工编排
@@ -28,7 +28,10 @@ description: 主代理出方案、Codex 裸调施工的轻量任务编排。把�
 codex exec -m gpt-5.6-sol -c model_reasoning_effort="<high|xhigh>" -s danger-full-access "$(cat PROMPT_FILE)"
 ```
 
-- 模型：`gpt-5.6-sol`（2026-07 当前最优；模型换代只改这一处）。裸传简称会被服务端 400 拒。
+- 模型：`gpt-5.6-sol`（模型换代只改这一处）。裸传简称会被服务端 400 拒。CLI 没有
+  `codex models list` 之类的列举子命令，有效模型名以本机 `~/.codex/config.toml` 的 `model`
+  和交互态 `/model` 选择器为准；换名时先用最小探针（`codex exec -m <名字> "打印 ok"`）验证，
+  400 即无效——不要把某个模型名当成长期事实写死。
 - effort：`high` = 边界清楚的常规施工、定点修复、**收口核验轮**（验证指定修复落点的轻量复审）；
   `xhigh` = 架构级重构、资金/并发核心、**全面对抗审查轮**（跨模块因果链追踪型发现只在这一档稳定出现）。
   别为省时间降全面审的档；若确需多视角拆审（见「改-审循环」的升级判据），并行开会话，墙钟只等最慢一路。
@@ -43,18 +46,35 @@ nohup bash -c 'codex exec ... "$(cat PROMPT_FILE)"' > RUN.log 2>&1 & echo "pid=$
 - prompt 先写文件再 `cat`，避免引号地狱；日志放任务专属 tmp 目录。
 - 启动调用必须秒回：**同一次 Bash 里不得再带任何耗时前台命令**——外层超时按进程组
   SIGKILL，`nohup` 挡不住组杀，会把刚起的 codex 连带杀死且日志无收尾。
-- 运行中的日志不要 truncate（`>` 重定向下会变稀疏文件，破坏完成检测）。
+- 运行中的日志不要 truncate（`>` 重定向下会变稀疏文件，开头整段变 NUL：既破坏完成检测，
+  事后 grep 取证也会全失效）。
 
-## 监控（三终态，不看 PID）
+## 监控（先等进程终态，再解析标记）
 
-| 终态 | 判定 |
-|---|---|
-| 完成 | 日志出现 codex 收尾标记 `tokens used` |
-| 崩溃 | 进程消失且无收尾标记 |
-| 停滞 | 日志 mtime 静默 20–25 分钟 |
+`echo $!` 拿到的 pid **就是 codex 本身**——`bash -c '单条命令'` 会 exec 掉外层 shell，
+中间没有 wrapper 进程（实测：echoed pid 与 `ps` 里 `codex exec` 的 pid 完全相同）。所以分两步：
 
-坑：不要直接 grep 自己定义的完成标记——codex 会**回显 prompt 原文**（内含标记文本），
-必须先确认 `tokens used` 再解析其后的输出。
+**第一步：等进程消失**（`kill -0 <pid>` / `ps -p <pid>`）。进程还在就是在跑，**不解析日志**。
+**第二步：进程消失后，只看收尾行之后的尾部输出**判四终态：
+
+| 终态 | 判定（进程已退出后） | 处置 |
+|---|---|---|
+| 完成 | 有 `tokens used` 收尾块 + 尾部有 `STAGE N DONE` | 进验收 |
+| 主动阻断 | 有 `tokens used` + 尾部有 `BLOCKED[批N]:` | 裁决后 resume 续接 |
+| 会话结束但无交付 | 有 `tokens used`，但两个约定标记都没有 | 读尾部实际输出定性，多半要 resume 收口或重派 |
+| 崩溃 / 静默死亡 | 无 `tokens used`，日志停在半途 | 多为外层组杀或会话被 reap（上游 issue #540、#634：可以 exit 0 静默死）；日志无收尾，重跑或 resume |
+
+**停滞不是终态**：`codex exec` 是单轮进程，打印 BLOCKED 后必然退出（实测 exit 0）。
+进程活着 + 日志 mtime 静默 20–25 分钟 = 运行中的卡死告警，人工读日志决定是否 kill，
+不能解读成「停在阶段边界等裁决」。
+
+坑（均已实测取证）：
+- **`tokens used` 只代表会话结束，不代表任务完成**——BLOCKED 退出同样打印它。完成必须由
+  自定义标记确认。
+- **不要 `grep -q "tokens used"` / 直接 grep 自定义标记**：codex 开跑就**回显 prompt 原文**，
+  合同里写的 `tokens used`、`BLOCKED:` 字样会在日志开头命中，造成刚起就判完成/误判阻断。
+  真实收尾格式是**独占一行**的 `tokens used`，下一行才是数字（如 `11,252`），其后重印最后一条
+  agent 消息。用 `grep -n -x "tokens used" | tail -1` 定位收尾行，只解析其后的输出。
 
 ## Prompt 模板（五要素，轻量）
 
@@ -67,7 +87,9 @@ nohup bash -c 'codex exec ... "$(cat PROMPT_FILE)"' > RUN.log 2>&1 & echo "pid=$
    （日志/缓存）也卡成越界，白烧一轮。
 5. **边界与交付**：不 push、不碰生产态（部署/systemd/生产库）、只 stage 本任务文件；
    分阶段 commit + 验收包；完成时末尾单独一行打印约定标记（如 `STAGE N DONE` + commit hash）；
-   遇合同矛盾或必须越权时写「待裁决」并打印 `BLOCKED: <原因>` 停在阶段边界。
+   遇合同矛盾或必须越权时写「待裁决」并打印 `BLOCKED[批N]: <原因>` 停在阶段边界。
+   **标记必须带批次 token**（`STAGE 1 DONE` / `BLOCKED[批1]:`）：裸 `BLOCKED:` 会与 prompt 回显、
+   验收材料 diff、合同引文撞车，无法区分「codex 真的阻断了」和「日志里只是出现了这四个字」。
 
 **自主权条款（关键，必写）**：施工中发现的真实问题，允许 codex 在范围内自行根因修复并记入
 验收包；只有推翻合同前提或触碰红线才 BLOCKED。这是发挥新模型能力的核心一条。
@@ -83,11 +105,23 @@ nohup bash -c 'codex exec ... "$(cat PROMPT_FILE)"' > RUN.log 2>&1 & echo "pid=$
 
 ## 改-审循环
 
-- 审查用**全新 codex 会话**（独立性优先，不 resume 施工会话）；prompt 要求对抗式、
+- 审查用**全新会话**（独立性优先，不 resume 施工会话）；**审查者可插拔**——不必是同一代 codex，
+  换模型或换 agent 做交叉审同样成立（偏差不同源时发现率更高），此处只约束"独立会话"这一条。
+  prompt 要求对抗式、
   按严重度分级、每条给复现路径；涉及数据/状态的审查喂只读副本接地，不连生产。
 - 修复轮可续上下文：`codex exec resume --last -m <model> -c sandbox_mode="danger-full-access" "<prompt>"`。
   权限与施工轮完全一致（`-c sandbox_mode` 与 `-s` 是同一配置项的两种写法）；仅因 resume
   子命令未实现 `-s` 快捷别名（clap 拒收），才改用 `-c` 通用写法，不是降级进沙箱。
+- **两套 resume 不互通，别混用**：裸 CLI 的 `codex exec resume` 读 `~/.codex` 的会话记录；
+  codex 插件（`/codex:*`）走自己的 job store，按 job json 里的 `status` + `pid` 判重。
+  进程已死而 json 仍是 `"status":"running"` 时，插件会以 `Task ... is still running` 直接拒绝续接。
+  这不是本机损坏，是上游已知缺陷：job status 只由启动它的那个进程回写，**全程不做 pid 存活校验**
+  （openai/codex-plugin-cc 源码 `resolveLatestTrackedTaskThread` 只读 json 的 status；
+  上游 issue #222 / #517 / #540 / #634，其中 #540 明确记录"任务 exit 0 静默死亡但永远停在 running"）。
+  卡住时人工把该 job json 的 `status` 改成 `failed`，或直接走裸 CLI。
+  **裸调起的会话一律用裸 CLI resume**，不要用插件命令去续。另：`--last` 按 cwd 取最近一条记录，
+  同一工作树跑过多个会话时会续错——多会话并存就用 session id 显式指定（日志开头 `session id:` 行；
+  上游 README 也是推荐用 `/codex:result` 给出的 session id 而非 `--last`）。
 - **默认单路对抗审查**。普通改动首轮无阻断项即收口；若发现阻断项，修复后换全新会话复审，一轮干净即可。
 - 触及不可逆资产、跨模块复杂状态，或连续出现新阻断项时，才用 **until-dry**：连续两轮无阻断性新发现才收口。
 - 仅当改动同时触及不可逆资产，且 diff 大到单会话无法覆盖完整因果链时，才按正确性/回归、数据与状态安全、删除完整性拆成三路。
