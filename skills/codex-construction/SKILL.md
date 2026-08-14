@@ -62,7 +62,7 @@ nohup bash -c 'codex exec ... "$(cat PROMPT_FILE)"' > RUN.log 2>&1 & echo "pid=$
 | 完成 | 有 `tokens used` 收尾块 + 尾部有 `STAGE N DONE` | 进验收 |
 | 主动阻断 | 有 `tokens used` + 尾部有 `BLOCKED[批N]:` | 裁决后 resume 续接 |
 | 会话结束但无交付 | 有 `tokens used`，但两个约定标记都没有 | 读尾部实际输出定性，多半要 resume 收口或重派 |
-| 崩溃 / 静默死亡 | 无 `tokens used`，日志停在半途 | 多为外层组杀或会话被 reap（上游 issue #540、#634：可以 exit 0 静默死）；日志无收尾，重跑或 resume |
+| 崩溃 / 静默死亡 | 无 `tokens used`，日志停在半途 | 多为外层组杀或会话被 reap，可以 exit 0 静默死；日志无收尾，重跑或 resume |
 
 **停滞不是终态**：`codex exec` 是单轮进程，打印 BLOCKED 后必然退出（实测 exit 0）。
 进程活着 + 日志 mtime 静默 20–25 分钟 = 运行中的卡死告警，人工读日志决定是否 kill，
@@ -112,16 +112,13 @@ nohup bash -c 'codex exec ... "$(cat PROMPT_FILE)"' > RUN.log 2>&1 & echo "pid=$
 - 修复轮可续上下文：`codex exec resume --last -m <model> -c sandbox_mode="danger-full-access" "<prompt>"`。
   权限与施工轮完全一致（`-c sandbox_mode` 与 `-s` 是同一配置项的两种写法）；仅因 resume
   子命令未实现 `-s` 快捷别名（clap 拒收），才改用 `-c` 通用写法，不是降级进沙箱。
-- **两套 resume 不互通，别混用**：裸 CLI 的 `codex exec resume` 读 `~/.codex` 的会话记录；
-  codex 插件（`/codex:*`）走自己的 job store，按 job json 里的 `status` + `pid` 判重。
-  进程已死而 json 仍是 `"status":"running"` 时，插件会以 `Task ... is still running` 直接拒绝续接。
-  这不是本机损坏，是上游已知缺陷：job status 只由启动它的那个进程回写，**全程不做 pid 存活校验**
-  （openai/codex-plugin-cc 源码 `resolveLatestTrackedTaskThread` 只读 json 的 status；
-  上游 issue #222 / #517 / #540 / #634，其中 #540 明确记录"任务 exit 0 静默死亡但永远停在 running"）。
-  卡住时人工把该 job json 的 `status` 改成 `failed`，或直接走裸 CLI。
-  **裸调起的会话一律用裸 CLI resume**，不要用插件命令去续。另：`--last` 按 cwd 取最近一条记录，
-  同一工作树跑过多个会话时会续错——多会话并存就用 session id 显式指定（日志开头 `session id:` 行；
-  上游 README 也是推荐用 `/codex:result` 给出的 session id 而非 `--last`）。
+- **裸调起的会话用裸 CLI 续**：codex 插件（`/codex:*`）只认自己 job store 里的任务，裸调会话对它
+  不可见，用插件命令续不上。反向可行——插件任务给出的 session id 可以直接 `codex resume <session-id>`。
+- **插件报 `Task ... is still running` 但进程已经没了**：插件只读 job json 的 `status` 判活、不校验
+  进程存活，任务被外部杀掉时 status 会永远停在 `running`。这是上游缺陷，不是本机损坏，别去排查环境。
+  处置：把该 job json 的 `status` 改成 `failed`，或直接走裸 CLI。
+- **`--last` 只在单会话时可靠**：它按 cwd 取最近一条，同一工作树跑过多个会话会续错。
+  多会话并存时用 session id 显式指定（日志开头 `session id:` 行）。
 - **默认单路对抗审查**。普通改动首轮无阻断项即收口；若发现阻断项，修复后换全新会话复审，一轮干净即可。
 - 触及不可逆资产、跨模块复杂状态，或连续出现新阻断项时，才用 **until-dry**：连续两轮无阻断性新发现才收口。
 - 仅当改动同时触及不可逆资产，且 diff 大到单会话无法覆盖完整因果链时，才按正确性/回归、数据与状态安全、删除完整性拆成三路。
