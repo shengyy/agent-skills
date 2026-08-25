@@ -4,3 +4,5 @@ node_modules/
 .runtime/
 .omegacode/
 skills-lock.json
+__pycache__/
+*.pyc
