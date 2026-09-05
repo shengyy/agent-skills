@@ -35,7 +35,7 @@ effort 只用三档：`medium` / `high` / `xhigh`。档位跟**合同留给 code
 ## 启动
 
 ```bash
-nohup bash -c 'codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
+nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
   --dangerously-bypass-approvals-and-sandbox -o LAST.md - < PROMPT_FILE' > RUN.log 2>&1 & echo "pid=$!"
 ```
 
@@ -50,7 +50,7 @@ nohup bash -c 'codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
 
 ## 监控：先等进程，再读 LAST.md
 
-`echo $!` 拿到的 pid 就是 codex 本身。**进程还在就是在跑，不解析日志**；进程消失后看 `LAST.md`：
+`echo $!` 拿到的 pid 就是 codex 本身——靠的是 `bash -c` 里那个 `exec`；漏掉它 `$!` 就是 bash 包装进程，codex 是其子进程，`kill -0` 仍能判活，但杀它不会杀到 codex。**进程还在就是在跑，不解析日志**；进程消失后看 `LAST.md`：
 
 | 终态 | 判定 | 处置 |
 |---|---|---|
@@ -98,6 +98,7 @@ codex exec resume <session-id> -m gpt-6-astra -c model_reasoning_effort="<medium
   --dangerously-bypass-approvals-and-sandbox -o LAST2.md "<裁决或修复指令>"
 ```
 
+- 长修复轮同样按启动一节后台起（nohup + exec + `-o`），不在前台等。
 - 审查从 `high` 起步；触及不可逆资产的最终态对抗审用 `xhigh`。修复轮按问题定档：审查已定位 → `medium`；审查指出的是设计问题 → `high`。
 - **必须用显式 session id，不要用 `--last`**：`--last` 只在当前 cwd 找，找不到就静默新开空会话（exit 0、无警告），修复轮零上下文重跑。session id 跨 cwd 有效。
 - **effort 和权限旗标必须重传**：resume 不继承，漏传静默掉回 config 默认。

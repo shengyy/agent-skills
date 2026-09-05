@@ -7,6 +7,21 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-05
+
+### Fixed
+
+- **启动行加 `exec`**：`nohup bash -c 'exec codex …'`。没有 exec 时 `$!` 是 bash 包装进程、codex 是它的子进程，
+  `kill -0` 判活仍对，但「自我监控死锁立杀重派」只杀包装会留下 codex 孤儿继续跑。监控一节补了说明。
+- 长修复轮的 resume 同样按启动一节后台起，不在前台等。
+
+0.4.0 的改动已在 gpt-6-astra 上实测通过。冒烟：xhigh 服务端接受；`--dangerously-bypass-approvals-and-sandbox`
+在 exec / resume 下头部均回显 `sandbox: danger-full-access` + `approval: never`；`-o` 在正常结束和 BLOCKED 时写出、
+进程被杀时不写；resume 重传 effort 生效。端到端（全 medium，五次运行合计 4 分钟）：stdin 合同 + XML 五要素施工并
+commit，验收包五项齐全；产品级裁决点老实打 `BLOCKED[批2]` 停在边界零改动；显式 session id resume 下裁决后续做到
+`STAGE 2 DONE`；全新会话审查只审不改，自行用只读方式跑门禁；修复轮无问题时 `STAGE 3 DONE no-op`；五次日志里
+自我监控轮询 0 行；全权核验通过（仓库外写文件、curl 外网）。
+
 ## [0.4.0] - 2026-09-05
 
 ### Changed
