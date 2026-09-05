@@ -17,14 +17,11 @@
    ```yaml
    ---
    name: <new-skill-name>
-   description: 一句话说明这个 skill 做什么、什么时候该用它；把触发词写清楚
+   description: <一句话：做什么、什么时候用>
    ---
    ```
 
-3. **写正文**——frontmatter 之后是给 agent 看的操作说明。建议：
-   - 用祈使句、分步骤（`## Step 1` …），把判断分支和停下来问人的条件写明确；
-   - 命令给可直接复制执行的形式；
-   - 列清前置依赖（需要哪些外部 CLI、如何安装、如何验证）。
+3. **写正文**——frontmatter 之后是给 agent 看的操作说明，只写分工、边界、验收三类内容，不写过程控制（写法见 [`AGENTS.md`](AGENTS.md)，样例见 `skills/codex-construction/SKILL.md`）；命令给可直接复制执行的形式，列清前置依赖。
 
 4. **附带文件（可选）**：脚本、模板、参考资料放 `skills/<name>/` 下的子目录，会随 `skills add` 一起安装。
 

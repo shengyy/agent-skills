@@ -11,7 +11,6 @@
 ## 检查清单
 
 - [ ] `python3 scripts/validate_skills.py` 本地通过
-- [ ] `SKILL.md` 的 `name` 与目录名一致，`description` 写清了触发场景
+- [ ] 已符合 `AGENTS.md` 的硬约束
 - [ ] 新增/改动的 skill 已实际试装验证（`npx skills add . --skill <name> --copy`）
-- [ ] 已更新 `README.md` 的 *Available Skills* 表与 `CHANGELOG.md`
-- [ ] 未写入任何机密 / 令牌 / 个人敏感路径
+- [ ] 已更新两份 README 的 *Available Skills* 表与 `CHANGELOG.md`
