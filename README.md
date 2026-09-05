@@ -34,7 +34,7 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | What it does | Requires |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/) | Lightweight delegation loop: the main agent owns the plan, Codex builds via bare `codex exec` — batched dispatch, three-state background monitoring, per-stage commits + acceptance packets, build-review cycles. Delegate fully, supervise only for over-engineering. | `codex` CLI (logged in) |
+| [`codex-construction`](skills/codex-construction/) | Lightweight delegation loop: the main agent owns the plan, Codex builds via bare `codex exec` — batched dispatch, effort dispatched on a medium / high / xhigh ladder, background monitoring, per-stage commits + acceptance packets, build-review cycles. Delegate fully, supervise only for over-engineering. | `codex` CLI (logged in) |
 
 ### codex-construction
 
@@ -47,7 +47,10 @@ codex login
 
 Hardened during a real full-day architecture overhaul (6 stages, 10k+ lines net deleted,
 three long unattended construction runs with zero hangs), then distilled into a skill.
-To switch model or reasoning effort, edit the single invocation line in SKILL.md.
+Default model is `gpt-6-astra`. Reasoning effort uses only three tiers — medium / high / xhigh —
+chosen by the criteria in SKILL.md's tier table: the tier follows how much design latitude the
+contract leaves to Codex and the cost of being wrong; construction defaults to medium, review
+never runs below the construction tier. To switch model, edit the launch line in SKILL.md.
 
 ## Design philosophy (since v0.3)
 

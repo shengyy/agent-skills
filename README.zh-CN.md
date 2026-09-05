@@ -34,7 +34,7 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | 说明 | 前置依赖 |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/) | 主代理出方案、Codex 裸调 `codex exec` 施工的轻量派工编排：分批派工、后台三态监控、分阶段 commit + 验收包、改-审循环。主代理放权 + 监工过度工程，其余全交给模型。 | `codex` CLI（已登录） |
+| [`codex-construction`](skills/codex-construction/) | 主代理出方案、Codex 裸调 `codex exec` 施工的轻量派工编排：分批派工、effort 按 medium / high / xhigh 三档派、后台监控、分阶段 commit + 验收包、改-审循环。主代理放权 + 监工过度工程，其余全交给模型。 | `codex` CLI（已登录） |
 
 ### codex-construction
 
@@ -46,7 +46,8 @@ codex login
 ```
 
 在一次真实的整日架构重构（6 阶段、净删万余行、三轮长时施工无一卡死）中打磨成型，
-随后沉淀为 skill。要换模型/推理力度，直接改 SKILL.md 调用一节的那一行。
+随后沉淀为 skill。默认模型 `gpt-6-astra`；推理力度只用 medium / high / xhigh 三档，按 SKILL.md「档位」一节的判据选——
+档位跟合同留给 codex 的裁量空间和出错代价走，施工默认 medium，审查不低于施工档。要换模型，改启动一节的调用行。
 
 ## 设计哲学（v0.3 起）
 
