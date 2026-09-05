@@ -45,38 +45,32 @@ npm install -g @openai/codex
 codex login
 ```
 
-Hardened during a real full-day architecture overhaul (6 stages, 10k+ lines net deleted,
-three long unattended construction runs with zero hangs), then distilled into a skill.
 Default model is `gpt-6-astra`. Reasoning effort uses only three tiers — medium / high / xhigh —
 chosen by the criteria in SKILL.md's tier table: the tier follows how much design latitude the
 contract leaves to Codex and the cost of being wrong; construction defaults to medium, review
 never runs below the construction tier. To switch model, edit the launch line in SKILL.md.
 
-## Design philosophy (since v0.3)
+## Design philosophy
 
-v0.2's `codex-dev` / `codex-dev-native` were written for the previous model generation:
-sandbox plumbing, write allowlists, brief templates, concurrency registries — most of that
-volume re-did work the engine and the model can now do themselves, and it was the root
-cause of the constant hangs and silent stalls.
+Current-generation coding models have capability to spare, so what orchestration still adds
+collapses to three things: **division of labor, boundaries, acceptance**.
 
-Current-generation models (GPT‑5.6+ / Claude 5+) have capability to spare. Orchestration
-value collapses to three things: **division of labor, boundaries, acceptance**. So v0.3
-replaces both old skills with one ~100-line `codex-construction`:
-
-- **Delegate**: Codex is fully autonomous within a batch (read the contract, implement,
-  run gates, commit, write the acceptance packet). The prompt carries only five elements:
+- **Delegate**: Codex is fully autonomous within a batch — read the contract, implement, run
+  gates, commit, write the acceptance packet. The prompt carries only five elements:
   site / contract pointer / scope / true red lines / boundaries & delivery protocol.
-- **Supervise**: the systematic failure mode of unsupervised Codex is over-engineering —
-  the main agent intervenes only at plan rulings, per-batch acceptance, and BLOCKED
-  decisions. Never process management.
-- **Fewer constraints win**: the more implementation detail you pin down, the more often
-  the model is forced into second-best solutions. Real problems found mid-build may be
-  root-cause-fixed in scope, recorded in the acceptance packet.
+- **Supervise**: the systematic failure mode of unsupervised Codex is over-engineering, so the
+  main agent intervenes only at plan rulings, per-batch acceptance, and BLOCKED decisions —
+  never process management.
+- **Fewer constraints win**: the more implementation detail you pin down, the more often the
+  model is forced into a second-best solution. Real problems found mid-build may be
+  root-cause-fixed in scope and recorded in the acceptance packet.
+
+Version history, including the skills this one replaced, lives in [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Every skill must pass
-`python scripts/validate_skills.py`.
+`python3 scripts/validate_skills.py`.
 
 ## License
 

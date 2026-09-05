@@ -45,30 +45,26 @@ npm install -g @openai/codex
 codex login
 ```
 
-在一次真实的整日架构重构（6 阶段、净删万余行、三轮长时施工无一卡死）中打磨成型，
-随后沉淀为 skill。默认模型 `gpt-6-astra`；推理力度只用 medium / high / xhigh 三档，按 SKILL.md「档位」一节的判据选——
+默认模型 `gpt-6-astra`；推理力度只用 medium / high / xhigh 三档，按 SKILL.md「档位」一节的判据选——
 档位跟合同留给 codex 的裁量空间和出错代价走，施工默认 medium，审查不低于施工档。要换模型，改启动一节的调用行。
 
-## 设计哲学（v0.3 起）
+## 设计哲学
 
-v0.2 的 `codex-dev` / `codex-dev-native` 是给老一代模型写的：沙箱管道、写权限
-allowlist、任务书模板、并发 registry……大量篇幅在替引擎和模型做它们如今自己能做好的事，
-也是「总断、不反馈」的根源。
+当前一代编码模型能力过剩，编排还能提供的价值收敛为三件事：**分工、边界、验收**。
 
-新一代模型（GPT‑5.6+ / Claude 5+）能力过剩，编排的价值收敛为三件事：**分工、边界、验收**。
-所以 v0.3 用一个约百行的 `codex-construction` 整体替换两个旧 skill：
-
-- **放权**：codex 一批之内全自主（读合同、实现、跑门禁、commit、写验收包），
-  prompt 只给「现场 / 合同指针 / 范围 / 真红线 / 边界与交付」五要素；
-- **监工**：codex 独立干活的系统性偏差是过度工程——主代理只在方案裁决、
-  分批验收、BLOCKED 裁决三个点介入，不管过程；
+- **放权**：codex 一批之内全自主——读合同、实现、跑门禁、commit、写验收包；
+  prompt 只给「现场 / 合同指针 / 范围 / 真红线 / 边界与交付」五要素。
+- **监工**：codex 独立干活的系统性偏差是过度工程，所以主代理只在方案裁决、
+  分批验收、BLOCKED 裁决三个点介入，不管过程。
 - **约束越少越好**：实现细节约束越多，模型被迫选次级方案的概率越大。
-  发现真实问题允许 codex 在范围内自行根因修复，记入验收包即可。
+  施工中发现的真实问题允许在范围内自行根因修复，记入验收包即可。
+
+版本历史（含被本 skill 取代的旧 skill）见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 贡献
 
 见 [CONTRIBUTING.md](CONTRIBUTING.md)。每个 skill 必须通过
-`python scripts/validate_skills.py` 的结构校验。
+`python3 scripts/validate_skills.py` 的结构校验。
 
 ## License
 
