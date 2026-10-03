@@ -53,6 +53,13 @@ codex login
 
 当前一代编码模型能力过剩，编排还能提供的价值收敛为三件事：**分工、边界、验收**。
 
+- **放权**：codex 一批之内全自主——读合同、实现、跑门禁、commit、写验收包；
+  prompt 只给「现场 / 合同指针 / 范围 / 真红线 / 边界与交付」五要素。
+- **监工**：主代理只在合同定稿、分批验收、BLOCKED 裁决三个点介入，控制复杂度、
+  核对范围与测试价值、解决产品决策；Codex 负责批内实现。
+- **约束越少越好**：实现细节约束越多，模型被迫选次级方案的概率越大。
+  施工中发现的真实问题允许在范围内自行根因修复，记入验收包即可。
+
 执行规则由 skill 的[「分工」](skills/codex-construction/SKILL.md#分工)、[「Prompt 五要素」](skills/codex-construction/SKILL.md#prompt-五要素)与[「改-审循环」](skills/codex-construction/SKILL.md#改-审循环)负责。
 
 ## 文档地图
@@ -77,10 +84,10 @@ codex login
 | [仓库根目录](.) | 仓库入口与声明：Agent 指引、双语 README、贡献指南、变更记录、版本、授权与本地产物忽略规则。 |
 | [`.github/`](.github/) | GitHub 协作与自动化：PR 模板和校验 workflow。 |
 | [`.github/workflows/`](.github/workflows/) | CI 定义；当前 workflow 调用仓库的 skill 校验脚本。 |
-| [`assets/`](assets/) | README 展示素材，当前为 `banner.svg`；随 skill 分发的素材归各 skill 安装包。 |
-| [`scripts/`](scripts/) | 仓库级门禁，当前由 `validate_skills.py` 校验 skill 结构与 frontmatter；随 skill 分发的脚本归各 skill 安装包。 |
+| [`assets/`](assets/) | README 展示素材；随 skill 分发的素材归各 skill 安装包。 |
+| [`scripts/`](scripts/) | 仓库级门禁（`validate_skills.py` 校验 skill 结构与 frontmatter）；随 skill 分发的脚本归各 skill 安装包。 |
 | [`skills/`](skills/) | 可安装的 skill 包；包内结构见[仓库约定](AGENTS.md#仓库约定)。 |
-| [`skills/codex-construction/`](skills/codex-construction/) | codex-construction 安装包，当前仅包含 `SKILL.md` 入口。 |
+| [`skills/codex-construction/`](skills/codex-construction/) | codex-construction 安装包。 |
 
 ## 贡献
 
