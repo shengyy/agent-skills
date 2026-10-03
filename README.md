@@ -13,7 +13,7 @@
 
 Built on the common [Agent Skills](https://github.com/anthropics/skills) format (one `SKILL.md` per skill) and installable with a single [`skills`](https://www.npmjs.com/package/skills) CLI command — works across Claude Code, Codex, Cursor, and other agents.
 
-This README covers the project, installation, and document map. Each skill's `SKILL.md` owns its behavior; [CONTRIBUTING.md](CONTRIBUTING.md) owns contribution and release procedures.
+This README covers the project, installation, and document and directory maps. Each skill's `SKILL.md` owns its behavior; [CONTRIBUTING.md](CONTRIBUTING.md) owns contribution and release procedures.
 
 ## Install
 
@@ -63,7 +63,7 @@ The operational rules live in the skill: [Division of labor](skills/codex-constr
 
 | File | Responsibility |
 |---|---|
-| [README.md](README.md) | English project overview, installation entry point, and document map. |
+| [README.md](README.md) | English project overview, installation entry point, and document and directory maps. |
 | [README.zh-CN.md](README.zh-CN.md) | Synchronized Chinese version of the README. |
 | [AGENTS.md](AGENTS.md) | Shared repository conventions and task routing. |
 | [CLAUDE.md](CLAUDE.md) | Imports the shared conventions and covers Claude Code's local memory boundary. |
@@ -73,6 +73,18 @@ The operational rules live in the skill: [Division of labor](skills/codex-constr
 | [CHANGELOG.md](CHANGELOG.md) | Version history and unreleased changes. |
 | [VERSION](VERSION) | Current release number. |
 | [LICENSE](LICENSE) | MIT license terms. |
+
+## Repository layout
+
+| Directory | Responsibility |
+|---|---|
+| [Repository root](.) | Repository entry documents and declarations: Agent guidance, READMEs, contribution guide, changelog, version, license, and local artifact ignore rules. |
+| [`.github/`](.github/) | GitHub collaboration and automation: the PR template and validation workflow. |
+| [`.github/workflows/`](.github/workflows/) | CI definitions; the current workflow runs the repository's skill validation script. |
+| [`assets/`](assets/) | README display assets; currently `banner.svg`. Assets shipped with a skill belong in that skill's package. |
+| [`scripts/`](scripts/) | Repository-level validation; currently `validate_skills.py` checks skill structure and frontmatter. Scripts shipped with a skill belong in that skill's package. |
+| [`skills/`](skills/) | Installable skill packages; their internal layout follows the [repository conventions](AGENTS.md#仓库约定). |
+| [`skills/codex-construction/`](skills/codex-construction/) | The codex-construction package; currently contains only its `SKILL.md` entry point. |
 
 ## Contributing
 
