@@ -13,6 +13,8 @@
 
 Built on the common [Agent Skills](https://github.com/anthropics/skills) format (one `SKILL.md` per skill) and installable with a single [`skills`](https://www.npmjs.com/package/skills) CLI command — works across Claude Code, Codex, Cursor, and other agents.
 
+This README covers the project, installation, and document map. Each skill's `SKILL.md` owns its behavior; [CONTRIBUTING.md](CONTRIBUTING.md) owns contribution and release procedures.
+
 ## Install
 
 ```bash
@@ -45,34 +47,32 @@ npm install -g @openai/codex
 codex login
 ```
 
-Default model is `gpt-6-astra`. Reasoning effort uses only three tiers — medium / high / xhigh —
-chosen by the criteria in the [skill's tier table](skills/codex-construction/SKILL.md#档位): the tier follows how much design latitude the
-contract leaves to Codex and the cost of being wrong; construction defaults to medium, review
-never runs below the construction tier. To switch model, edit the launch line in SKILL.md.
+For model selection and CLI invocation, see [Launch](skills/codex-construction/SKILL.md#启动);
+for reasoning effort, see [Effort tiers](skills/codex-construction/SKILL.md#档位).
 
 ## Design philosophy
 
 Current-generation coding models have capability to spare, so what orchestration still adds
 collapses to three things: **division of labor, boundaries, acceptance**.
 
-- **Delegate**: Codex is fully autonomous within a batch — read the contract, implement, run
-  gates, commit, write the acceptance packet. The prompt carries only five elements:
-  site / contract pointer / scope / true red lines / boundaries & delivery protocol.
-- **Supervise**: the main agent intervenes at contract approval, per-batch acceptance, and
-  BLOCKED decisions to control complexity, check scope and test value, and resolve product
-  decisions. Codex owns implementation within the batch.
-- **Fewer constraints win**: the more implementation detail you pin down, the more often the
-  model is forced into a second-best solution. Real problems found mid-build may be
-  root-cause-fixed in scope and recorded in the acceptance packet.
+The operational rules live in the skill: [Division of labor](skills/codex-construction/SKILL.md#分工),
+[Prompt contract](skills/codex-construction/SKILL.md#prompt-五要素), and
+[Build-review cycle](skills/codex-construction/SKILL.md#改-审循环).
 
 ## Documentation
 
 | File | Responsibility |
 |---|---|
-| [AGENTS.md](AGENTS.md) | Shared repository conventions and task routing; [CLAUDE.md](CLAUDE.md) imports them and covers Claude's local memory. |
+| [README.md](README.md) | English project overview, installation entry point, and document map. |
+| [README.zh-CN.md](README.zh-CN.md) | Synchronized Chinese version of the README. |
+| [AGENTS.md](AGENTS.md) | Shared repository conventions and task routing. |
+| [CLAUDE.md](CLAUDE.md) | Imports the shared conventions and covers Claude Code's local memory boundary. |
 | [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | Delegation, effort tiers, CLI operations, and acceptance contracts. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Adding skills, local installation checks, contributions, and releases. |
-| [CHANGELOG.md](CHANGELOG.md) | Version history; [VERSION](VERSION) holds the current release number. |
+| [pull_request_template.md](.github/pull_request_template.md) | PR change description and checklist; contribution procedures live in CONTRIBUTING.md. |
+| [CHANGELOG.md](CHANGELOG.md) | Version history and unreleased changes. |
+| [VERSION](VERSION) | Current release number. |
+| [LICENSE](LICENSE) | MIT license terms. |
 
 ## Contributing
 
