@@ -11,6 +11,6 @@
 ## 检查清单
 
 - [ ] `python3 scripts/validate_skills.py` 本地通过
-- [ ] 已符合 `AGENTS.md` 的硬约束
+- [ ] 已符合 [AGENTS.md](../AGENTS.md) 的仓库约定
 - [ ] 新增/改动的 skill 已实际试装验证（`npx skills add . --skill <name> --copy`）
 - [ ] 已更新两份 README 的 *Available Skills* 表与 `CHANGELOG.md`
