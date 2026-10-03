@@ -1,6 +1,6 @@
 # 贡献指南 / Contributing
 
-本文写**人类贡献流程**：怎么加 skill、怎么本地试装、怎么发版。目录与 frontmatter 规则、唯一 owner 和门禁由 [`AGENTS.md`](AGENTS.md) 拥有。
+本文负责新增 skill、本地试装、贡献与发版流程；仓库约定见 [`AGENTS.md`](AGENTS.md)，结构校验以 [`scripts/validate_skills.py`](scripts/validate_skills.py) 为准，面向安装者的入口见 [`README.md`](README.md)。
 
 ## 加一个新 skill
 

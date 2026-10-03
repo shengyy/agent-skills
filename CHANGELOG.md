@@ -1,6 +1,6 @@
 # Changelog
 
-本项目的所有重要变更都会记录在此文件中。
+本文记录版本历史与待发布变更；当前发布版本号见 [`VERSION`](VERSION)，发版流程见 [`CONTRIBUTING.md`](CONTRIBUTING.md#发布新版本)。
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
@@ -11,6 +11,8 @@
 
 - `codex-construction`：将模型习性评判与施压措辞改为分工、范围和验收要求；保留“合同不要求先出计划或中途汇报”并写明原因（单轮会话会在交出计划后结束）。保留 stdin 合同、后台启动、显式 session id、effort 档位与独立抽验机制。
 - 仓库指引补齐按任务读取的路由，双语 README 增加文档地图；贡献流程引用仓库约定的唯一 owner。
+- 文档职责审计：双语 README 补齐逐文件地图，skill 执行细则改为链接其 owner；贡献指南明确结构校验 owner，PR 模板按贡献流程链接适用检查项。
+- 目录职责审计：双语 README 登记全部被跟踪的顶层目录与第二层目录，区分仓库级脚本和展示素材与各 skill 安装包的内容；Agent 路由同步指向目录地图。
 
 ## [0.4.1] - 2026-09-05
 

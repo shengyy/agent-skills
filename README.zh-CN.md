@@ -13,6 +13,8 @@
 
 遵循通用 [Agent Skills](https://github.com/anthropics/skills) 格式（每个 skill 一个 `SKILL.md`），用 [`skills`](https://www.npmjs.com/package/skills) CLI 一条命令即可安装，跨 Claude Code / Codex / Cursor 等多种 agent 通用。
 
+本文负责仓库介绍、安装入口与文档和目录地图。各 skill 的行为由其 `SKILL.md` 拥有，贡献与发版流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
 ## 安装
 
 ```bash
@@ -45,8 +47,7 @@ npm install -g @openai/codex
 codex login
 ```
 
-默认模型 `gpt-6-astra`；推理力度只用 medium / high / xhigh 三档，按 [skill「档位」一节](skills/codex-construction/SKILL.md#档位)的判据选——
-档位跟合同留给 codex 的裁量空间和出错代价走，施工默认 medium，审查不低于施工档。要换模型，改启动一节的调用行。
+模型选择与 CLI 调用见 skill 的[「启动」](skills/codex-construction/SKILL.md#启动)，推理力度见[「档位」](skills/codex-construction/SKILL.md#档位)。
 
 ## 设计哲学
 
@@ -59,14 +60,34 @@ codex login
 - **约束越少越好**：实现细节约束越多，模型被迫选次级方案的概率越大。
   施工中发现的真实问题允许在范围内自行根因修复，记入验收包即可。
 
+执行规则由 skill 的[「分工」](skills/codex-construction/SKILL.md#分工)、[「Prompt 五要素」](skills/codex-construction/SKILL.md#prompt-五要素)与[「改-审循环」](skills/codex-construction/SKILL.md#改-审循环)负责。
+
 ## 文档地图
 
 | 文件 | 职责 |
 |---|---|
-| [AGENTS.md](AGENTS.md) | 共用的仓库约定与任务路由；[CLAUDE.md](CLAUDE.md) 导入它并说明 Claude 的本地 memory。 |
+| [README.md](README.md) | 英文仓库介绍、安装入口与文档和目录地图。 |
+| [README.zh-CN.md](README.zh-CN.md) | README 的中文同步版本。 |
+| [AGENTS.md](AGENTS.md) | 共用的仓库约定与任务路由。 |
+| [CLAUDE.md](CLAUDE.md) | 导入共用约定，补充 Claude Code 的本地 memory 边界。 |
 | [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | 派工、effort 档位、CLI 操作与验收契约。 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 新增 skill、本地试装、贡献与发版流程。 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本历史；[VERSION](VERSION) 保存当前发布版本号。 |
+| [pull_request_template.md](.github/pull_request_template.md) | PR 改动说明与检查清单；贡献流程由 CONTRIBUTING.md 负责。 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本历史与待发布变更。 |
+| [VERSION](VERSION) | 当前发布版本号。 |
+| [LICENSE](LICENSE) | MIT 授权条款。 |
+
+## 目录地图
+
+| 目录 | 职责 |
+|---|---|
+| [仓库根目录](.) | 仓库入口与声明：Agent 指引、双语 README、贡献指南、变更记录、版本、授权与本地产物忽略规则。 |
+| [`.github/`](.github/) | GitHub 协作与自动化：PR 模板和校验 workflow。 |
+| [`.github/workflows/`](.github/workflows/) | CI 定义；当前 workflow 调用仓库的 skill 校验脚本。 |
+| [`assets/`](assets/) | README 展示素材；随 skill 分发的素材归各 skill 安装包。 |
+| [`scripts/`](scripts/) | 仓库级门禁（`validate_skills.py` 校验 skill 结构与 frontmatter）；随 skill 分发的脚本归各 skill 安装包。 |
+| [`skills/`](skills/) | 可安装的 skill 包；包内结构见[仓库约定](AGENTS.md#仓库约定)。 |
+| [`skills/codex-construction/`](skills/codex-construction/) | codex-construction 安装包。 |
 
 ## 贡献
 
