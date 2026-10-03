@@ -1,6 +1,6 @@
 # 贡献指南 / Contributing
 
-本文写**人类贡献流程**：怎么加 skill、怎么本地试装、怎么发版。仓库的硬约束（目录与 frontmatter 规则、唯一 owner、门禁）由 [`AGENTS.md`](AGENTS.md) 拥有，这里不重复。
+本文写**人类贡献流程**：怎么加 skill、怎么本地试装、怎么发版。目录与 frontmatter 规则、唯一 owner 和门禁由 [`AGENTS.md`](AGENTS.md) 拥有。
 
 ## 加一个新 skill
 
@@ -21,7 +21,7 @@
    ---
    ```
 
-3. **写正文**——frontmatter 之后是给 agent 看的操作说明，只写分工、边界、验收三类内容，不写过程控制（写法见 [`AGENTS.md`](AGENTS.md)，样例见 `skills/codex-construction/SKILL.md`）；命令给可直接复制执行的形式，列清前置依赖。
+3. **写正文**——frontmatter 之后是给 agent 看的操作说明，写法见 [`AGENTS.md`](AGENTS.md)，样例见 [`codex-construction/SKILL.md`](skills/codex-construction/SKILL.md)；命令给可直接复制执行的形式，列清前置依赖。
 
 4. **附带文件（可选）**：脚本、模板、参考资料放 `skills/<name>/` 下的子目录，会随 `skills add` 一起安装。
 

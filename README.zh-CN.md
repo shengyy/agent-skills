@@ -34,7 +34,7 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | 说明 | 前置依赖 |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/) | 主代理出方案、Codex 裸调 `codex exec` 施工的轻量派工编排：分批派工、effort 按 medium / high / xhigh 三档派、后台监控、分阶段 commit + 验收包、改-审循环。主代理放权 + 监工过度工程，其余全交给模型。 | `codex` CLI（已登录） |
+| [`codex-construction`](skills/codex-construction/SKILL.md) | 主代理出方案、Codex 裸调 `codex exec` 施工的轻量派工编排：分批派工、effort 按 medium / high / xhigh 三档派、后台监控、分阶段 commit + 验收包、改-审循环。Codex 负责实现，主代理确定范围并验收结果。 | `codex` CLI（已登录） |
 
 ### codex-construction
 
@@ -45,7 +45,7 @@ npm install -g @openai/codex
 codex login
 ```
 
-默认模型 `gpt-6-astra`；推理力度只用 medium / high / xhigh 三档，按 SKILL.md「档位」一节的判据选——
+默认模型 `gpt-6-astra`；推理力度只用 medium / high / xhigh 三档，按 [skill「档位」一节](skills/codex-construction/SKILL.md#档位)的判据选——
 档位跟合同留给 codex 的裁量空间和出错代价走，施工默认 medium，审查不低于施工档。要换模型，改启动一节的调用行。
 
 ## 设计哲学
@@ -54,12 +54,19 @@ codex login
 
 - **放权**：codex 一批之内全自主——读合同、实现、跑门禁、commit、写验收包；
   prompt 只给「现场 / 合同指针 / 范围 / 真红线 / 边界与交付」五要素。
-- **监工**：codex 独立干活的系统性偏差是过度工程，所以主代理只在方案裁决、
-  分批验收、BLOCKED 裁决三个点介入，不管过程。
+- **监工**：主代理只在合同定稿、分批验收、BLOCKED 裁决三个点介入，控制复杂度、
+  核对范围与测试价值、解决产品决策；Codex 负责批内实现。
 - **约束越少越好**：实现细节约束越多，模型被迫选次级方案的概率越大。
   施工中发现的真实问题允许在范围内自行根因修复，记入验收包即可。
 
-版本历史（含被本 skill 取代的旧 skill）见 [CHANGELOG.md](CHANGELOG.md)。
+## 文档地图
+
+| 文件 | 职责 |
+|---|---|
+| [AGENTS.md](AGENTS.md) | 共用的仓库约定与任务路由；[CLAUDE.md](CLAUDE.md) 导入它并说明 Claude 的本地 memory。 |
+| [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | 派工、effort 档位、CLI 操作与验收契约。 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 新增 skill、本地试装、贡献与发版流程。 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本历史；[VERSION](VERSION) 保存当前发布版本号。 |
 
 ## 贡献
 

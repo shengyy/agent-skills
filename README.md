@@ -34,7 +34,7 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | What it does | Requires |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/) | Lightweight delegation loop: the main agent owns the plan, Codex builds via bare `codex exec` — batched dispatch, effort dispatched on a medium / high / xhigh ladder, background monitoring, per-stage commits + acceptance packets, build-review cycles. Delegate fully, supervise only for over-engineering. | `codex` CLI (logged in) |
+| [`codex-construction`](skills/codex-construction/SKILL.md) | Lightweight delegation loop: the main agent owns the plan, Codex builds via bare `codex exec` — batched dispatch, effort dispatched on a medium / high / xhigh ladder, background monitoring, per-stage commits + acceptance packets, build-review cycles. Codex owns implementation; the main agent sets scope and accepts results. | `codex` CLI (logged in) |
 
 ### codex-construction
 
@@ -46,7 +46,7 @@ codex login
 ```
 
 Default model is `gpt-6-astra`. Reasoning effort uses only three tiers — medium / high / xhigh —
-chosen by the criteria in SKILL.md's tier table: the tier follows how much design latitude the
+chosen by the criteria in the [skill's tier table](skills/codex-construction/SKILL.md#档位): the tier follows how much design latitude the
 contract leaves to Codex and the cost of being wrong; construction defaults to medium, review
 never runs below the construction tier. To switch model, edit the launch line in SKILL.md.
 
@@ -58,14 +58,21 @@ collapses to three things: **division of labor, boundaries, acceptance**.
 - **Delegate**: Codex is fully autonomous within a batch — read the contract, implement, run
   gates, commit, write the acceptance packet. The prompt carries only five elements:
   site / contract pointer / scope / true red lines / boundaries & delivery protocol.
-- **Supervise**: the systematic failure mode of unsupervised Codex is over-engineering, so the
-  main agent intervenes only at plan rulings, per-batch acceptance, and BLOCKED decisions —
-  never process management.
+- **Supervise**: the main agent intervenes at contract approval, per-batch acceptance, and
+  BLOCKED decisions to control complexity, check scope and test value, and resolve product
+  decisions. Codex owns implementation within the batch.
 - **Fewer constraints win**: the more implementation detail you pin down, the more often the
   model is forced into a second-best solution. Real problems found mid-build may be
   root-cause-fixed in scope and recorded in the acceptance packet.
 
-Version history, including the skills this one replaced, lives in [CHANGELOG.md](CHANGELOG.md).
+## Documentation
+
+| File | Responsibility |
+|---|---|
+| [AGENTS.md](AGENTS.md) | Shared repository conventions and task routing; [CLAUDE.md](CLAUDE.md) imports them and covers Claude's local memory. |
+| [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | Delegation, effort tiers, CLI operations, and acceptance contracts. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Adding skills, local installation checks, contributions, and releases. |
+| [CHANGELOG.md](CHANGELOG.md) | Version history; [VERSION](VERSION) holds the current release number. |
 
 ## Contributing
 
