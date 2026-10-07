@@ -36,7 +36,7 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | What it does | Requires |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/SKILL.md) | Lightweight delegation loop: the main agent owns the plan, Codex builds via bare `codex exec` — batched dispatch, effort dispatched on a medium / high / xhigh ladder, background monitoring, per-stage commits + acceptance packets, build-review cycles. Codex owns implementation; the main agent sets scope and accepts results. | `codex` CLI (logged in) |
+| [`codex-construction`](skills/codex-construction/SKILL.md) | Brief-driven delegation: the main agent writes a brief (background, deliverable, focus, quality & resources, style & taste), then lets Codex build via bare `codex exec` — effort on a medium / high / xhigh ladder, background monitoring, acceptance against the brief, build-review cycles. Codex owns implementation; the main agent owns the brief and acceptance. | `codex` CLI (logged in) |
 
 ### codex-construction
 
@@ -52,21 +52,22 @@ for reasoning effort, see [Effort tiers](skills/codex-construction/SKILL.md#档�
 
 ## Design philosophy
 
-Current-generation coding models have capability to spare, so what orchestration still adds
-collapses to three things: **division of labor, boundaries, acceptance**.
+Current-generation coding models have capability to spare. Pinning down implementation detail
+mostly forces them into second-best solutions; what still moves the result is **a clear goal
+and a high bar**. So the main agent's effort goes into the brief and acceptance, not process control.
 
-- **Delegate**: Codex is fully autonomous within a batch — read the contract, implement, run
-  gates, commit, write the acceptance packet. The prompt carries only five elements:
-  site / contract pointer / scope / true red lines / boundaries & delivery protocol.
-- **Supervise**: the main agent intervenes at contract approval, per-batch acceptance, and
-  BLOCKED decisions to control complexity, check scope and test value, and resolve product
-  decisions. Codex owns implementation within the batch.
-- **Fewer constraints win**: the more implementation detail you pin down, the more often the
-  model is forced into a second-best solution. Real problems found mid-build may be
-  root-cause-fixed in scope and recorded in the acceptance packet.
+- **Write the brief like you'd brief a top engineer**: background and motivation, what the
+  deliverable looks like, what matters most, the quality bar plus the resources to reach it,
+  and the style and taste you expect. Add only true red lines and a fixed run protocol.
+- **Let go**: within a batch Codex makes every implementation call — read, design, build,
+  run gates, commit, write the acceptance packet. Real problems found mid-build are
+  root-cause-fixed in scope and recorded.
+- **Accept against the brief**: verify the deliverable yourself, check the focus actually
+  landed, and read the diff for quality and taste. Product decisions come back as BLOCKED.
 
 The operational rules behind these live in the skill: [Division of labor](skills/codex-construction/SKILL.md#分工),
-[Prompt contract](skills/codex-construction/SKILL.md#prompt-五要素), and
+[Writing the brief](skills/codex-construction/SKILL.md#写简报),
+[Acceptance](skills/codex-construction/SKILL.md#验收), and
 [Build-review cycle](skills/codex-construction/SKILL.md#改-审循环).
 
 ## Documentation
@@ -77,7 +78,7 @@ The operational rules behind these live in the skill: [Division of labor](skills
 | [README.zh-CN.md](README.zh-CN.md) | Synchronized Chinese version of the README. |
 | [AGENTS.md](AGENTS.md) | Shared repository conventions and task routing. |
 | [CLAUDE.md](CLAUDE.md) | Imports the shared conventions and covers Claude Code's local memory boundary. |
-| [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | Delegation, effort tiers, CLI operations, and acceptance contracts. |
+| [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | Brief structure, delegation, effort tiers, CLI operations, and acceptance. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Adding skills, local installation checks, contributions, and releases. |
 | [pull_request_template.md](.github/pull_request_template.md) | PR change description and checklist; contribution procedures live in CONTRIBUTING.md. |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and unreleased changes. |

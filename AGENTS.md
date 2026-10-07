@@ -8,7 +8,7 @@ Skill 行为以各目录的 `SKILL.md` 为准，结构校验以 [`scripts/valida
 
 | 范围 | 先读 |
 |---|---|
-| 派工 skill 的分工、档位、CLI 操作与验收 | [`skills/codex-construction/SKILL.md`](skills/codex-construction/SKILL.md) |
+| 派工 skill 的简报结构、分工、档位、CLI 操作与验收 | [`skills/codex-construction/SKILL.md`](skills/codex-construction/SKILL.md) |
 | 新增 skill、本地试装、贡献与发版流程 | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 | PR 改动说明与检查清单 | [`.github/pull_request_template.md`](.github/pull_request_template.md) |
 | 仓库介绍、安装入口与文档和目录地图 | [`README.md`](README.md)、[`README.zh-CN.md`](README.zh-CN.md) |

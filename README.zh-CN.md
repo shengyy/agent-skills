@@ -36,7 +36,7 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | 说明 | 前置依赖 |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/SKILL.md) | 主代理出方案、Codex 裸调 `codex exec` 施工的轻量派工编排：分批派工、effort 按 medium / high / xhigh 三档派、后台监控、分阶段 commit + 验收包、改-审循环。Codex 负责实现，主代理确定范围并验收结果。 | `codex` CLI（已登录） |
+| [`codex-construction`](skills/codex-construction/SKILL.md) | 简报驱动的派工编排：主代理写好简报（背景、交付、重点、质量与资源、风格与品味）后放手，Codex 裸调 `codex exec` 施工；effort 按 medium / high / xhigh 三档派、后台监控、对照简报验收、改-审循环。Codex 负责实现，主代理负责简报与验收。 | `codex` CLI（已登录） |
 
 ### codex-construction
 
@@ -51,16 +51,13 @@ codex login
 
 ## 设计哲学
 
-当前一代编码模型能力过剩，编排还能提供的价值收敛为三件事：**分工、边界、验收**。
+当前一代编码模型能力有富余，把实现细节钉得越死，越容易逼它选次级方案；真正决定结果的是**清楚的目标和足够高的门槛**。所以主代理的功夫花在简报和验收上，不花在过程管控上。
 
-- **放权**：codex 一批之内全自主——读合同、实现、跑门禁、commit、写验收包；
-  prompt 只给「现场 / 合同指针 / 范围 / 真红线 / 边界与交付」五要素。
-- **监工**：主代理只在合同定稿、分批验收、BLOCKED 裁决三个点介入，控制复杂度、
-  核对范围与测试价值、解决产品决策；Codex 负责批内实现。
-- **约束越少越好**：实现细节约束越多，模型被迫选次级方案的概率越大。
-  施工中发现的真实问题允许在范围内自行根因修复，记入验收包即可。
+- **像给顶尖工程师交代任务那样写简报**：背景与动机、交付物长什么样、什么最重要、质量门槛和达到它所需的资源、期望的风格与品味；另附真红线和固定的运行约定。
+- **放手**：一批之内的实现决策全归 Codex——读代码、设计、实现、跑门禁、commit、写验收包；施工中发现的真实问题在范围内根因修复并记录。
+- **对照简报验收**：亲自验证交付，确认重点真的落地，读 diff 判断质量与品味；产品裁决通过 BLOCKED 交回主代理。
 
-执行规则由 skill 的[「分工」](skills/codex-construction/SKILL.md#分工)、[「Prompt 五要素」](skills/codex-construction/SKILL.md#prompt-五要素)与[「改-审循环」](skills/codex-construction/SKILL.md#改-审循环)负责。
+执行规则由 skill 的[「分工」](skills/codex-construction/SKILL.md#分工)、[「写简报」](skills/codex-construction/SKILL.md#写简报)、[「验收」](skills/codex-construction/SKILL.md#验收)与[「改-审循环」](skills/codex-construction/SKILL.md#改-审循环)负责。
 
 ## 文档地图
 
@@ -70,7 +67,7 @@ codex login
 | [README.zh-CN.md](README.zh-CN.md) | README 的中文同步版本。 |
 | [AGENTS.md](AGENTS.md) | 共用的仓库约定与任务路由。 |
 | [CLAUDE.md](CLAUDE.md) | 导入共用约定，补充 Claude Code 的本地 memory 边界。 |
-| [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | 派工、effort 档位、CLI 操作与验收契约。 |
+| [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | 简报结构、派工、effort 档位、CLI 操作与验收。 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 新增 skill、本地试装、贡献与发版流程。 |
 | [pull_request_template.md](.github/pull_request_template.md) | PR 改动说明与检查清单；贡献流程由 CONTRIBUTING.md 负责。 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本历史与待发布变更。 |
