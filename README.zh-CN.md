@@ -36,7 +36,7 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | 说明 | 前置依赖 |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/SKILL.md) | 简报驱动的派工编排：主代理写好简报（背景、交付、重点、质量与资源、风格与品味）后放手，Codex 裸调 `codex exec` 施工；effort 按 medium / high / xhigh 三档派、后台监控、对照简报验收、改-审循环。Codex 负责实现，主代理负责简报与验收。 | `codex` CLI（已登录） |
+| [`codex-construction`](skills/codex-construction/SKILL.md) | 简报驱动的派工编排：主代理写好简报（背景、交付、重点、质量与资源、风格与品味）后放手，判断交给模型、只守红线与 CLI 实测事实，Codex 裸调 `codex exec` 施工；effort 按 medium / high / xhigh 三档派、后台监控、对照简报验收、改-审循环。Codex 负责实现，主代理负责简报与验收。 | `codex` CLI（已登录） |
 
 ### codex-construction
 
@@ -53,11 +53,11 @@ codex login
 
 当前一代编码模型能力有富余，把实现细节钉得越死，越容易逼它选次级方案；真正决定结果的是**清楚的目标和足够高的门槛**。所以主代理的功夫花在简报和验收上，不花在过程管控上。
 
-- **像给顶尖工程师交代任务那样写简报**：背景与动机、交付物长什么样、什么最重要、质量门槛和达到它所需的资源、期望的风格与品味；另附真红线和固定的运行约定。
-- **放手**：一批之内的实现决策全归 Codex——读代码、设计、实现、跑门禁、commit、写验收包；施工中发现的真实问题在范围内根因修复并记录。
-- **对照简报验收**：亲自验证交付，确认重点真的落地，读 diff 判断质量与品味；产品裁决通过 BLOCKED 交回主代理。
+- **事实写死，判断放开**：硬规则只有不可逆的动作边界和 CLI 实测事实；简报篇幅、拆批、档位、审几轮由主代理判断，设计、实现、测试和可逆取舍由 Codex 判断。担心的偏差写成「说明为什么值得」，不写成禁令。
+- **像给顶尖工程师交代任务那样写简报**：背景与动机、交付物长什么样、什么最重要、质量门槛和达到它所需的资源与授权、期望的风格与品味；另附红线和固定的运行约定。
+- **对照简报验收**：亲自验证交付，确认重点真的落地，读 diff 判断质量与品味，逐条看 Codex 自主做出的判断；只有不可逆的产品决定通过 BLOCKED 交回主代理。
 
-执行规则由 skill 的[「分工」](skills/codex-construction/SKILL.md#分工)、[「写简报」](skills/codex-construction/SKILL.md#写简报)、[「验收」](skills/codex-construction/SKILL.md#验收)与[「改-审循环」](skills/codex-construction/SKILL.md#改-审循环)负责。
+执行规则由 skill 的[「原则」](skills/codex-construction/SKILL.md#原则)、[「分工」](skills/codex-construction/SKILL.md#分工)、[「写简报」](skills/codex-construction/SKILL.md#写简报)、[「验收」](skills/codex-construction/SKILL.md#验收)与[「改-审循环」](skills/codex-construction/SKILL.md#改-审循环)负责。
 
 ## 文档地图
 

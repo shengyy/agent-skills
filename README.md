@@ -36,7 +36,7 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | What it does | Requires |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/SKILL.md) | Brief-driven delegation: the main agent writes a brief (background, deliverable, focus, quality & resources, style & taste), then lets Codex build via bare `codex exec` — effort on a medium / high / xhigh ladder, background monitoring, acceptance against the brief, build-review cycles. Codex owns implementation; the main agent owns the brief and acceptance. | `codex` CLI (logged in) |
+| [`codex-construction`](skills/codex-construction/SKILL.md) | Brief-driven delegation: the main agent writes a brief (background, deliverable, focus, quality & resources, style & taste), then lets Codex build via bare `codex exec`, leaving judgment to the models and hard-coding only red lines and field-tested CLI facts — effort on a medium / high / xhigh ladder, background monitoring, acceptance against the brief, build-review cycles. Codex owns implementation; the main agent owns the brief and acceptance. | `codex` CLI (logged in) |
 
 ### codex-construction
 
@@ -56,16 +56,19 @@ Current-generation coding models have capability to spare. Pinning down implemen
 mostly forces them into second-best solutions; what still moves the result is **a clear goal
 and a high bar**. So the main agent's effort goes into the brief and acceptance, not process control.
 
+- **Hard-code facts, free up judgment**: the only hard rules are irreversible action
+  boundaries and field-tested CLI facts. Brief length, batching, effort, and review rounds are
+  the main agent's call; design, implementation, testing, and reversible trade-offs are Codex's.
+  Known biases are handled by asking for a justification, not by prohibitions.
 - **Write the brief like you'd brief a top engineer**: background and motivation, what the
-  deliverable looks like, what matters most, the quality bar plus the resources to reach it,
-  and the style and taste you expect. Add only true red lines and a fixed run protocol.
-- **Let go**: within a batch Codex makes every implementation call — read, design, build,
-  run gates, commit, write the acceptance packet. Real problems found mid-build are
-  root-cause-fixed in scope and recorded.
+  deliverable looks like, what matters most, the quality bar plus the resources and latitude
+  to reach it, and the style and taste you expect. Add red lines and a fixed run protocol.
 - **Accept against the brief**: verify the deliverable yourself, check the focus actually
-  landed, and read the diff for quality and taste. Product decisions come back as BLOCKED.
+  landed, read the diff for quality and taste, and review each call Codex made on its own.
+  Only irreversible product decisions come back as BLOCKED.
 
-The operational rules behind these live in the skill: [Division of labor](skills/codex-construction/SKILL.md#分工),
+The operational rules behind these live in the skill: [Principles](skills/codex-construction/SKILL.md#原则),
+[Division of labor](skills/codex-construction/SKILL.md#分工),
 [Writing the brief](skills/codex-construction/SKILL.md#写简报),
 [Acceptance](skills/codex-construction/SKILL.md#验收), and
 [Build-review cycle](skills/codex-construction/SKILL.md#改-审循环).
