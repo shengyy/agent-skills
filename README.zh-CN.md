@@ -55,7 +55,7 @@ codex login
 
 - **事实写死，判断放开**：硬规则只有不可逆的动作边界和 CLI 实测事实；简报篇幅、拆批、档位、审几轮由主代理判断，设计、实现、测试和可逆取舍由 Codex 判断。担心的偏差写成「说明为什么值得」，不写成禁令。
 - **像给顶尖工程师交代任务那样写简报**：背景与动机、交付物长什么样、什么最重要、质量门槛和达到它所需的资源与授权、期望的风格与品味；另附红线和固定的运行约定。
-- **对照简报验收**：亲自验证交付，确认重点真的落地，读 diff 判断质量与品味，逐条看 Codex 自主做出的判断；只有不可逆的产品决定通过 BLOCKED 交回主代理。
+- **对照简报验收**：亲自验证交付，确认重点真的落地，读 diff 判断质量与品味，逐条看 Codex 自主做出的判断；只有不可逆的决定和排除不了的阻塞通过 BLOCKED 交回主代理。
 
 执行规则由 skill 的[「原则」](skills/codex-construction/SKILL.md#原则)、[「分工」](skills/codex-construction/SKILL.md#分工)、[「写简报」](skills/codex-construction/SKILL.md#写简报)、[「验收」](skills/codex-construction/SKILL.md#验收)与[「改-审循环」](skills/codex-construction/SKILL.md#改-审循环)负责。
 

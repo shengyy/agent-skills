@@ -96,7 +96,7 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
 | 崩溃 | 无 `LAST.md`，日志无错误、停在半途 | 多为外层组杀，resume 或重跑 |
 
 - 别在 `RUN.log` 里 grep 标记：Codex 开跑会回显简报原文，标记字样会在开头命中。
-- 日志里反复对同一 pid `kill -0` / `ps` 且 git 零 commit，是自我监控死锁，杀掉重派。
+- 日志里反复对 codex 自己的 pid `kill -0` / `ps`、git 零 commit，是自我监控死锁，杀掉重派；它在等自己起的测试或构建子进程不算。
 - 进程活着但日志长时间无新输出，可能卡死，结合任务规模判断；`codex exec` BLOCKED 后必然退出，不会停着等。
 - 施工期间别在同一工作树跑门禁、切分支或改文件，会和它的改动互相干扰。
 

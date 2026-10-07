@@ -65,7 +65,7 @@ and a high bar**. So the main agent's effort goes into the brief and acceptance,
   to reach it, and the style and taste you expect. Add red lines and a fixed run protocol.
 - **Accept against the brief**: verify the deliverable yourself, check the focus actually
   landed, read the diff for quality and taste, and review each call Codex made on its own.
-  Only irreversible product decisions come back as BLOCKED.
+  Only irreversible decisions and blockers it can't clear come back as BLOCKED.
 
 The operational rules behind these live in the skill: [Principles](skills/codex-construction/SKILL.md#原则),
 [Division of labor](skills/codex-construction/SKILL.md#分工),
