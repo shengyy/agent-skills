@@ -1,6 +1,6 @@
 ---
 name: codex-construction
-description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验收的派工编排。用户说「安排 codex 施工/干活/审」或调用 /codex-construction 时使用。
+description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验收的派工编排。用户说「安排 codex 施工/干活/审」、要把实现或审查交给 Codex（delegate to Codex），或调用 /codex-construction 时使用。
 ---
 
 # codex-construction — 写好简报，然后放手
@@ -25,6 +25,8 @@ description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验�
 
 像给一位没参与前期讨论的顶尖同事交代任务：讲清目标和门槛，不规定做法。一份好简报覆盖下面五件事；它们是检查清单不是表格，篇幅跟着任务走，修个小 bug 几句话就够。
 
+篇幅花在仓库给不了的东西上：为什么做、什么算完成、什么最重要、红线和品味只在用户和主代理心里，单轮会话里 Codex 没有机会问。仓库里查得到的，只给能省掉大量摸索的线索，例如已定位的故障入口、同类实现、已排除的方向。
+
 1. **背景**：什么项目、为什么做、做成了对谁有什么价值、走到哪一步（仓库路径、分支、前序 commit、方案文档路径）。动机讲清楚，没写的约束它能自己推出来。方案文档写目标、已和用户敲定的决定与约束，不写实现步骤，免得提前用掉 Codex 的设计空间。
 2. **交付**：哪些行为可以被验证、在什么数据或场景下成立。这就是完成条件。
 3. **重点**：这批真正要紧的一两件事、用户最在意什么、哪里最容易做错，以及这批不做什么。全都重要就等于没有重点。
@@ -33,7 +35,7 @@ description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验�
 
 **固定结尾**
 
-- **红线**：只写不可逆的动作，用具体动作表述（push、部署、生产库、付费 API）。没有就写「无」。
+- **红线**：完整权限之外唯一的边界。只写不可逆或有外部代价的具体动作（push、部署、生产库、付费 API），附一句代价——这在仓库里看不出来，写明了它也认得出同类动作。没有就写「无」。
 - **运行约定**：施工简报照抄下面这段，把 `N` 换成批号。不要另外要求先交计划：单轮会话交完计划就会结束。
 
 ```text
@@ -58,34 +60,51 @@ description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验�
 
 风格与品味：读起来像这个仓库原本就有的代码，src/export/invoice.ts 是写得不错的同类实现。偏好删减；要加新抽象或开关，说清为什么值得。
 
-红线：不 push、不部署、不连 .env 里的生产库。
+红线：不 push、不部署——push 会触发 CI 自动上线；不连 .env 里的库，那是生产库。
 ```
 
 ## 档位
 
-effort 是给 Codex 的推理预算，用 `medium` / `high` / `xhigh` 三档：要做的判断越多、错了越难回滚，给得越足。用户点名档位或模型时按用户的。
+effort 是给 Codex 的推理预算，用 `medium` / `high` / `xhigh` 三档：要做的判断越多、错了越难回滚，给得越足。`low` 撑不起无人值守的施工；`max` / `ultra` 多花的钱换不来相应的提升，只在用户点名时用（CLI 都接受）。用户点名档位或模型时按用户的。
 
-参考：常规施工 `medium`；设计、排查未知根因、审查 `high`；架构定型、资金/并发/安全核心、最终态对抗审 `xhigh`。重派通常升一档，同档重试多半重犯同样的错；审查档一般不低于施工档。
+参考：常规施工 `medium`；设计、排查未知根因、审查 `high`；架构定型、资金/并发/安全核心、最终态对抗审 `xhigh`。重派通常升一档，同档重试多半重犯同样的错；已在 `xhigh` 还不行，问题多半在简报。审查档一般不低于施工档。
 
 ## 启动
+
+按主代理的工具选一条路径，codex 命令本身相同。
+
+**工具管理的后台任务**：主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务。后台任务的寿命要覆盖整批施工：Claude Code 在终端、桌面应用、VS Code 里的本地会话不限时；无人值守会话（`-p`、Agent SDK、CI、云端）默认 30 分钟、最长 2 小时，`-p` 以文本传 prompt 时默认 10 分钟，可用 `BASH_DEFAULT_TIMEOUT_MS` / `BASH_MAX_TIMEOUT_MS` 调高。覆盖不了，或主代理会话可能先结束，就走 nohup 回退。
+
+```bash
+codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
+  --dangerously-bypass-approvals-and-sandbox -o LAST.md - < BRIEF_FILE > RUN.log 2>&1
+```
+
+卡死的 Codex 不退出，也就没有通知，所以同时起一个看门狗后台任务，盯这一次调用的日志和 `-o` 文件（续接轮换成 `RUN2.log` / `LAST2.md`）：日志超过 N 分钟没动就退出，唤醒主代理去看日志；`-o` 文件出现时自己退出。N 按任务规模和档位定，高档位长时间推理时日志也会静默。Codex 退出后停掉看门狗。
+
+```bash
+until [ -f LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
+```
+
+**nohup 回退**：没有这种能力时，用 nohup 起后台并立即返回，之后靠 pid 判活。不能在前台等：外层工具超时会按进程组 SIGKILL，`nohup` 挡不住。`exec` 不能省：有它 `$!` 才是 codex 本身，杀进程才杀得到 codex。
 
 ```bash
 nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
   --dangerously-bypass-approvals-and-sandbox -o LAST.md - < BRIEF_FILE' > RUN.log 2>&1 & echo "pid=$!"
 ```
 
-- 模型名以本机 `~/.codex/config.toml` 为准；换名先用 `codex exec -m <名字> "打印 ok"` 探针，400 即无效。
+两条路径共用：
+
+- 模型默认 `gpt-6-astra`，每次显式传 `-m`：`~/.codex/config.toml` 里的默认模型和档位是给交互用的，各机不同。用户点名换模型时先用 `codex exec -m <名字> "打印 ok"` 探针，400 即无效。
 - **effort 显式传**：漏传会静默掉回 config 默认档。
 - **简报走 stdin**（`- < FILE`）：放在 argv 会暴露到 `ps`，Codex 可能把自己的进程误认成另一个会话，转去监控而不开工。
-- **`exec` 不能省**：有它 `$!` 才是 codex 本身，杀进程才杀得到 codex。
 - `--dangerously-bypass-approvals-and-sandbox` 给完整权限、不设审批，exec 和 resume 都收；边界只靠红线。
 - `-o LAST.md` 把最终消息单独落盘，每批独立命名，启动前不得已存在。
-- 启动调用只后台派工并立即返回；外层工具超时会按进程组 SIGKILL，`nohup` 挡不住。
 - 启动后看 `RUN.log` 头部：记下 `session id:` 供续接，核对 `reasoning effort:`。
 
 ## 监控
 
-平时用 `kill -0 <pid>` 判活，是否完成不从日志判；疑似卡住时再看日志。进程退出后看 `LAST.md`：
+有退出通知就等通知，卡死靠看门狗唤醒；没有就用 `kill -0 <pid>` 判活。是否完成不从日志判，疑似卡住时再看日志。进程退出后看 `LAST.md`：
 
 | 终态 | 判定 | 处置 |
 |---|---|---|
@@ -95,6 +114,8 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
 | 额度耗尽 | 无 `LAST.md`，`RUN.log` 尾部 `ERROR: You've hit your usage limit … try again at HH:MM`，exit 1 | 到点续接：有进度 resume，零进度重跑；不算失败，不升档 |
 | 崩溃 | 无 `LAST.md`，日志无错误、停在半途 | 多为外层组杀，resume 或重跑 |
 
+- 额度耗尽的等待也交给后台任务：算出到点的秒数，后台跑 `sleep <秒数>` 当定时器，到点被唤醒后按启动一节续接（有进度 resume，零进度重跑），看门狗随续接一起起。
+- `BLOCKED` 要用户拍板、而用户可能已经离开时，用工具的推送通知叫回用户（如 Claude Code 的 `PushNotification`），别让整批工作停着等人发现。
 - 别在 `RUN.log` 里 grep 标记：Codex 开跑会回显简报原文，标记字样会在开头命中。
 - 日志里反复对 codex 自己的 pid `kill -0` / `ps`、git 零 commit，是自我监控死锁，杀掉重派；它在等自己起的测试或构建子进程不算。
 - 进程活着但日志长时间无新输出，可能卡死，结合任务规模判断；`codex exec` BLOCKED 后必然退出，不会停着等。
@@ -113,7 +134,7 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
 ## 批次
 
 - 一批是一个可独立验收的工作包，切多大由主代理判断：批越大 Codex 发挥空间越大，批越小验收越容易、回滚越便宜。
-- 同一工作树内串行，并发写会互相覆盖；要并行就用各自的 worktree，且文件集不相交。
+- 同一工作树内串行，并发写会互相覆盖；要并行就用各自的 worktree，且文件集不相交。每批各起一个后台任务，各自退出各自唤醒，到一批验收一批。
 
 ## 改-审循环
 
@@ -122,10 +143,11 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
 **修复轮**续上原施工会话：
 
 ```bash
-codex exec resume <session-id> -m gpt-6-astra -c model_reasoning_effort="<medium|high|xhigh>" \
-  --dangerously-bypass-approvals-and-sandbox -o LAST2.md "<裁决或修复要求>"
+codex exec resume <session-id> -m gpt-6-astra -c model_reasoning_effort="<effort>" \
+  --dangerously-bypass-approvals-and-sandbox -o LAST2.md - < FIX_FILE > RUN2.log 2>&1
 ```
 
+- 裁决或修复要求同样走 stdin；每轮的 `-o` 文件和日志都用新名字，上一轮的留着备查。
 - 用显式 session id，不用 `--last`：`--last` 只在当前 cwd 找，找不到会静默新开空会话（exit 0、无警告）。session id 跨 cwd 有效。
 - effort 和权限旗标每次重传，resume 不继承。
 - resume 后核对日志头部 `session id:` 与原会话一致。
