@@ -80,7 +80,6 @@ The operational rules behind these live in the skill: [Principles](skills/codex-
 | [README.md](README.md) | English project overview, installation entry point, and document and directory maps. |
 | [README.zh-CN.md](README.zh-CN.md) | Synchronized Chinese version of the README. |
 | [AGENTS.md](AGENTS.md) | Shared repository conventions and task routing. |
-| [CLAUDE.md](CLAUDE.md) | Imports the shared conventions and covers Claude Code's local memory boundary. |
 | [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | Brief structure, delegation, effort tiers, CLI operations, and acceptance. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Adding skills, local installation checks, contributions, and releases. |
 | [pull_request_template.md](.github/pull_request_template.md) | PR change description and checklist; contribution procedures live in CONTRIBUTING.md. |

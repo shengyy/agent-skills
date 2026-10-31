@@ -1,6 +1,6 @@
 # agent-skills · Agent 指引
 
-公开的 Agent Skills 合集（MIT），用 `skills` CLI 分发到 Claude Code、Codex、Cursor 等。提交的提示词会影响安装者的 Agent 行为；本文件存放各 Agent 共用的仓库约定，`CLAUDE.md` 导入本文件。
+公开的 Agent Skills 合集（MIT），用 `skills` CLI 分发到 Claude Code、Codex、Cursor 等。提交的提示词会影响安装者的 Agent 行为；本文件存放各 Agent 共用的仓库约定，
 
 Skill 行为以各目录的 `SKILL.md` 为准，结构校验以 [`scripts/validate_skills.py`](scripts/validate_skills.py) 为准；其它文档作为入口，冲突时修正对应 owner。
 

@@ -66,7 +66,6 @@ codex login
 | [README.md](README.md) | 英文仓库介绍、安装入口与文档和目录地图。 |
 | [README.zh-CN.md](README.zh-CN.md) | README 的中文同步版本。 |
 | [AGENTS.md](AGENTS.md) | 共用的仓库约定与任务路由。 |
-| [CLAUDE.md](CLAUDE.md) | 导入共用约定，补充 Claude Code 的本地 memory 边界。 |
 | [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | 简报结构、派工、effort 档位、CLI 操作与验收。 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 新增 skill、本地试装、贡献与发版流程。 |
 | [pull_request_template.md](.github/pull_request_template.md) | PR 改动说明与检查清单；贡献流程由 CONTRIBUTING.md 负责。 |
