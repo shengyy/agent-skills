@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-31
+
 ### Changed
 
 - **`codex-construction` 适配「Claude 当主代理、Codex 施工」**：启动拆成两条路径。主代理的工具能后台运行命令并在退出时唤醒（如 Claude Code Bash 的 `run_in_background`）时，把 `codex exec` 直接交给后台任务，退出即收到通知，不再轮询；否则走 `nohup` 回退，`exec`、`$!`、组杀这几条只属于这条路径。已在 Claude Code 2.1.314 + codex-cli 0.166.0 上端到端跑通（后台审查、退出唤醒、`-o` 落盘、`REVIEW DONE`）。
