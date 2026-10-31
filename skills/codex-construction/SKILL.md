@@ -73,14 +73,14 @@ effort 是给 Codex 的推理预算，用 `medium` / `high` / `xhigh` 三档：�
 
 按主代理的工具选一条路径，codex 命令本身相同。
 
-**工具管理的后台任务**：主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务。通知只送得到还活着的会话，主代理会话可能先结束时走 nohup 回退。
+**工具管理的后台任务**：主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务。后台任务的寿命要覆盖整批施工：Claude Code 在终端、桌面应用、VS Code 里的本地会话不限时；无人值守会话（`-p`、Agent SDK、CI、云端）默认 30 分钟、最长 2 小时，`-p` 以文本传 prompt 时默认 10 分钟，可用 `BASH_DEFAULT_TIMEOUT_MS` / `BASH_MAX_TIMEOUT_MS` 调高。覆盖不了，或主代理会话可能先结束，就走 nohup 回退。
 
 ```bash
 codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
   --dangerously-bypass-approvals-and-sandbox -o LAST.md - < BRIEF_FILE > RUN.log 2>&1
 ```
 
-卡死的 Codex 不退出，也就没有通知，所以同时起一个看门狗后台任务：`RUN.log` 超过 N 分钟没动就退出，唤醒主代理去看日志；`LAST.md` 出现时自己退出。N 按任务规模和档位定，高档位长时间推理时日志也会静默。Codex 退出后停掉看门狗。
+卡死的 Codex 不退出，也就没有通知，所以同时起一个看门狗后台任务，盯这一次调用的日志和 `-o` 文件（续接轮换成 `RUN2.log` / `LAST2.md`）：日志超过 N 分钟没动就退出，唤醒主代理去看日志；`-o` 文件出现时自己退出。N 按任务规模和档位定，高档位长时间推理时日志也会静默。Codex 退出后停掉看门狗。
 
 ```bash
 until [ -f LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
@@ -114,7 +114,7 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
 | 额度耗尽 | 无 `LAST.md`，`RUN.log` 尾部 `ERROR: You've hit your usage limit … try again at HH:MM`，exit 1 | 到点续接：有进度 resume，零进度重跑；不算失败，不升档 |
 | 崩溃 | 无 `LAST.md`，日志无错误、停在半途 | 多为外层组杀，resume 或重跑 |
 
-- 额度耗尽的等待也交给后台任务：算出到点的秒数，后台跑 `sleep <秒数>; codex exec resume …`（零进度时换成原启动命令），到点自动续接，跑完照常唤醒。
+- 额度耗尽的等待也交给后台任务：算出到点的秒数，后台跑 `sleep <秒数>` 当定时器，到点被唤醒后按启动一节续接（有进度 resume，零进度重跑），看门狗随续接一起起。
 - `BLOCKED` 要用户拍板、而用户可能已经离开时，用工具的推送通知叫回用户（如 Claude Code 的 `PushNotification`），别让整批工作停着等人发现。
 - 别在 `RUN.log` 里 grep 标记：Codex 开跑会回显简报原文，标记字样会在开头命中。
 - 日志里反复对 codex 自己的 pid `kill -0` / `ps`、git 零 commit，是自我监控死锁，杀掉重派；它在等自己起的测试或构建子进程不算。
@@ -144,9 +144,10 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
 
 ```bash
 codex exec resume <session-id> -m gpt-6-astra -c model_reasoning_effort="<effort>" \
-  --dangerously-bypass-approvals-and-sandbox -o LAST2.md "<裁决或修复要求>"
+  --dangerously-bypass-approvals-and-sandbox -o LAST2.md - < FIX_FILE > RUN2.log 2>&1
 ```
 
+- 裁决或修复要求同样走 stdin；每轮的 `-o` 文件和日志都用新名字，上一轮的留着备查。
 - 用显式 session id，不用 `--last`：`--last` 只在当前 cwd 找，找不到会静默新开空会话（exit 0、无警告）。session id 跨 cwd 有效。
 - effort 和权限旗标每次重传，resume 不继承。
 - resume 后核对日志头部 `session id:` 与原会话一致。
