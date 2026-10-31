@@ -25,7 +25,7 @@ description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验�
 
 像给一位没参与前期讨论的顶尖同事交代任务：讲清目标和门槛，不规定做法。一份好简报覆盖下面五件事；它们是检查清单不是表格，篇幅跟着任务走，修个小 bug 几句话就够。
 
-取舍看信息量：Codex 读仓库和背景就能推出来的不写，写了只会挤掉它自己的判断；只在用户和主代理心里的——为什么做、什么算完成、什么最重要、红线和品味——必须写，单轮会话里它没有机会问。
+篇幅花在仓库给不了的东西上：为什么做、什么算完成、什么最重要、红线和品味只在用户和主代理心里，单轮会话里 Codex 没有机会问。仓库里查得到的，只给能省掉大量摸索的线索，例如已定位的故障入口、同类实现、已排除的方向。
 
 1. **背景**：什么项目、为什么做、做成了对谁有什么价值、走到哪一步（仓库路径、分支、前序 commit、方案文档路径）。动机讲清楚，没写的约束它能自己推出来。方案文档写目标、已和用户敲定的决定与约束，不写实现步骤，免得提前用掉 Codex 的设计空间。
 2. **交付**：哪些行为可以被验证、在什么数据或场景下成立。这就是完成条件。
@@ -67,23 +67,33 @@ description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验�
 
 effort 是给 Codex 的推理预算：要做的判断越多、错了越难回滚，给得越足；超出任务需要只会更慢更贵。用户点名档位或模型时按用户的。
 
-`codex exec` 接受 `low` / `medium` / `high` / `xhigh` / `max` / `ultra`。参考：常规施工 `medium`；设计、排查未知根因、审查 `high`；架构定型、资金/并发/安全核心、最终态对抗审 `xhigh`，xhigh 仍拿不下的单点难题用 `max`。`ultra` 让 Codex 在会话内自动再分派子任务，和主代理拆批是同一层职责，默认不用。重派通常升一档，同档重试多半重犯同样的错；审查档一般不低于施工档。
+`codex exec` 接受 `low` / `medium` / `high` / `xhigh` / `max` / `ultra`。参考：常规施工 `medium`；设计、排查未知根因、审查 `high`；架构定型、资金/并发/安全核心、最终态对抗审 `xhigh`，xhigh 仍拿不下的单点难题用 `max`。重派通常升一档，同档重试多半重犯同样的错；审查档一般不低于施工档。
 
 ## 启动
+
+按主代理的工具选一条路径，codex 命令本身相同。
+
+**工具管理的后台任务**：主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务。
+
+```bash
+codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
+  --dangerously-bypass-approvals-and-sandbox -o LAST.md - < BRIEF_FILE > RUN.log 2>&1
+```
+
+**nohup 回退**：没有这种能力时，用 nohup 起后台并立即返回，之后靠 pid 判活。不能在前台等：外层工具超时会按进程组 SIGKILL，`nohup` 挡不住。`exec` 不能省：有它 `$!` 才是 codex 本身，杀进程才杀得到 codex。
 
 ```bash
 nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
   --dangerously-bypass-approvals-and-sandbox -o LAST.md - < BRIEF_FILE' > RUN.log 2>&1 & echo "pid=$!"
 ```
 
+两条路径共用：
+
 - 模型默认 `gpt-6-astra`，每次显式传 `-m`：`~/.codex/config.toml` 里的默认模型和档位是给交互用的，各机不同。用户点名换模型时先用 `codex exec -m <名字> "打印 ok"` 探针，400 即无效。
 - **effort 显式传**：漏传会静默掉回 config 默认档。
 - **简报走 stdin**（`- < FILE`）：放在 argv 会暴露到 `ps`，Codex 可能把自己的进程误认成另一个会话，转去监控而不开工。
-- **`exec` 不能省**：有它 `$!` 才是 codex 本身，杀进程才杀得到 codex。
 - `--dangerously-bypass-approvals-and-sandbox` 给完整权限、不设审批，exec 和 resume 都收；边界只靠红线。
 - `-o LAST.md` 把最终消息单独落盘，每批独立命名，启动前不得已存在。
-- 启动调用只后台派工并立即返回；外层工具超时会按进程组 SIGKILL，`nohup` 挡不住。
-- 主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，用它直接跑 `codex exec … - < BRIEF_FILE > RUN.log 2>&1`，不加 `nohup` / `&`：退出即收到通知，不用轮询；要中止就停掉这个后台任务。
 - 启动后看 `RUN.log` 头部：记下 `session id:` 供续接，核对 `reasoning effort:`。
 
 ## 监控
@@ -125,7 +135,7 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
 **修复轮**续上原施工会话：
 
 ```bash
-codex exec resume <session-id> -m gpt-6-astra -c model_reasoning_effort="<medium|high|xhigh>" \
+codex exec resume <session-id> -m gpt-6-astra -c model_reasoning_effort="<effort>" \
   --dangerously-bypass-approvals-and-sandbox -o LAST2.md "<裁决或修复要求>"
 ```
 
