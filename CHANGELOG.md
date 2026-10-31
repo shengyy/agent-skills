@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`codex-construction` 适配「Claude 当主代理、Codex 施工」**：主代理的工具能后台运行命令并在退出时唤醒（如 Claude Code Bash 的 `run_in_background`）时，直接后台跑 `codex exec`，退出即收到通知，不再轮询 `kill -0`；没有这种能力的主代理仍走 `nohup` 启动。
+- **模型口径统一**：默认 `gpt-6-astra` 并每次显式传 `-m`，删去与启动命令矛盾的「以 `config.toml` 为准」——config 的默认模型和档位是给交互用的，各机不同。
+- **档位按 codex-cli 0.166.0 实测更新**：`codex exec` 接受 `low` 到 `ultra` 六档；参考档位补上 `max`（xhigh 仍拿不下的单点难题），`ultra` 会在会话内自动再分派子任务、与主代理拆批重叠，默认不用。
+- **写简报加信息量判据**：Codex 读仓库和背景推得出来的不写；只在用户和主代理心里的（为什么做、完成条件、重点、红线、品味）必须写。红线明确为完整权限之外唯一的边界，每条附一句外部代价。
+- `description` 补英文触发词 delegate to Codex。
+
 ## [0.6.0] - 2026-10-08
 
 ### Changed

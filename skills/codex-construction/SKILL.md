@@ -1,6 +1,6 @@
 ---
 name: codex-construction
-description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验收的派工编排。用户说「安排 codex 施工/干活/审」或调用 /codex-construction 时使用。
+description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验收的派工编排。用户说「安排 codex 施工/干活/审」、要把实现或审查交给 Codex（delegate to Codex），或调用 /codex-construction 时使用。
 ---
 
 # codex-construction — 写好简报，然后放手
@@ -25,6 +25,8 @@ description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验�
 
 像给一位没参与前期讨论的顶尖同事交代任务：讲清目标和门槛，不规定做法。一份好简报覆盖下面五件事；它们是检查清单不是表格，篇幅跟着任务走，修个小 bug 几句话就够。
 
+取舍看信息量：Codex 读仓库和背景就能推出来的不写，写了只会挤掉它自己的判断；只在用户和主代理心里的——为什么做、什么算完成、什么最重要、红线和品味——必须写，单轮会话里它没有机会问。
+
 1. **背景**：什么项目、为什么做、做成了对谁有什么价值、走到哪一步（仓库路径、分支、前序 commit、方案文档路径）。动机讲清楚，没写的约束它能自己推出来。方案文档写目标、已和用户敲定的决定与约束，不写实现步骤，免得提前用掉 Codex 的设计空间。
 2. **交付**：哪些行为可以被验证、在什么数据或场景下成立。这就是完成条件。
 3. **重点**：这批真正要紧的一两件事、用户最在意什么、哪里最容易做错，以及这批不做什么。全都重要就等于没有重点。
@@ -33,7 +35,7 @@ description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验�
 
 **固定结尾**
 
-- **红线**：只写不可逆的动作，用具体动作表述（push、部署、生产库、付费 API）。没有就写「无」。
+- **红线**：完整权限之外唯一的边界。只写不可逆或有外部代价的具体动作（push、部署、生产库、付费 API），附一句代价——这在仓库里看不出来，写明了它也认得出同类动作。没有就写「无」。
 - **运行约定**：施工简报照抄下面这段，把 `N` 换成批号。不要另外要求先交计划：单轮会话交完计划就会结束。
 
 ```text
@@ -58,14 +60,14 @@ description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验�
 
 风格与品味：读起来像这个仓库原本就有的代码，src/export/invoice.ts 是写得不错的同类实现。偏好删减；要加新抽象或开关，说清为什么值得。
 
-红线：不 push、不部署、不连 .env 里的生产库。
+红线：不 push、不部署——push 会触发 CI 自动上线；不连 .env 里的库，那是生产库。
 ```
 
 ## 档位
 
-effort 是给 Codex 的推理预算，用 `medium` / `high` / `xhigh` 三档：要做的判断越多、错了越难回滚，给得越足。用户点名档位或模型时按用户的。
+effort 是给 Codex 的推理预算：要做的判断越多、错了越难回滚，给得越足；超出任务需要只会更慢更贵。用户点名档位或模型时按用户的。
 
-参考：常规施工 `medium`；设计、排查未知根因、审查 `high`；架构定型、资金/并发/安全核心、最终态对抗审 `xhigh`。重派通常升一档，同档重试多半重犯同样的错；审查档一般不低于施工档。
+`codex exec` 接受 `low` / `medium` / `high` / `xhigh` / `max` / `ultra`。参考：常规施工 `medium`；设计、排查未知根因、审查 `high`；架构定型、资金/并发/安全核心、最终态对抗审 `xhigh`，xhigh 仍拿不下的单点难题用 `max`。`ultra` 让 Codex 在会话内自动再分派子任务，和主代理拆批是同一层职责，默认不用。重派通常升一档，同档重试多半重犯同样的错；审查档一般不低于施工档。
 
 ## 启动
 
@@ -74,18 +76,19 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
   --dangerously-bypass-approvals-and-sandbox -o LAST.md - < BRIEF_FILE' > RUN.log 2>&1 & echo "pid=$!"
 ```
 
-- 模型名以本机 `~/.codex/config.toml` 为准；换名先用 `codex exec -m <名字> "打印 ok"` 探针，400 即无效。
+- 模型默认 `gpt-6-astra`，每次显式传 `-m`：`~/.codex/config.toml` 里的默认模型和档位是给交互用的，各机不同。用户点名换模型时先用 `codex exec -m <名字> "打印 ok"` 探针，400 即无效。
 - **effort 显式传**：漏传会静默掉回 config 默认档。
 - **简报走 stdin**（`- < FILE`）：放在 argv 会暴露到 `ps`，Codex 可能把自己的进程误认成另一个会话，转去监控而不开工。
 - **`exec` 不能省**：有它 `$!` 才是 codex 本身，杀进程才杀得到 codex。
 - `--dangerously-bypass-approvals-and-sandbox` 给完整权限、不设审批，exec 和 resume 都收；边界只靠红线。
 - `-o LAST.md` 把最终消息单独落盘，每批独立命名，启动前不得已存在。
 - 启动调用只后台派工并立即返回；外层工具超时会按进程组 SIGKILL，`nohup` 挡不住。
+- 主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，用它直接跑 `codex exec … - < BRIEF_FILE > RUN.log 2>&1`，不加 `nohup` / `&`：退出即收到通知，不用轮询；要中止就停掉这个后台任务。
 - 启动后看 `RUN.log` 头部：记下 `session id:` 供续接，核对 `reasoning effort:`。
 
 ## 监控
 
-平时用 `kill -0 <pid>` 判活，是否完成不从日志判；疑似卡住时再看日志。进程退出后看 `LAST.md`：
+有退出通知就等通知；没有就用 `kill -0 <pid>` 判活。是否完成不从日志判，疑似卡住时再看日志。进程退出后看 `LAST.md`：
 
 | 终态 | 判定 | 处置 |
 |---|---|---|

@@ -36,7 +36,7 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | What it does | Requires |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/SKILL.md) | Brief-driven delegation: the main agent writes a brief (background, deliverable, focus, quality & resources, style & taste), then lets Codex build via bare `codex exec`, leaving judgment to the models and hard-coding only red lines and field-tested CLI facts — effort on a medium / high / xhigh ladder, background monitoring, acceptance against the brief, build-review cycles. Codex owns implementation; the main agent owns the brief and acceptance. | `codex` CLI (logged in) |
+| [`codex-construction`](skills/codex-construction/SKILL.md) | Brief-driven delegation: the main agent writes a brief (background, deliverable, focus, quality & resources, style & taste), then lets Codex build via bare `codex exec`, leaving judgment to the models and hard-coding only red lines and field-tested CLI facts — effort budgeted per batch (medium by default, up to xhigh / max), background runs with exit notification or polling, acceptance against the brief, build-review cycles. Codex owns implementation; the main agent owns the brief and acceptance. | `codex` CLI (logged in) |
 
 ### codex-construction
 

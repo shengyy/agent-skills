@@ -36,7 +36,7 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | 说明 | 前置依赖 |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/SKILL.md) | 简报驱动的派工编排：主代理写好简报（背景、交付、重点、质量与资源、风格与品味）后放手，判断交给模型、只守红线与 CLI 实测事实，Codex 裸调 `codex exec` 施工；effort 按 medium / high / xhigh 三档派、后台监控、对照简报验收、改-审循环。Codex 负责实现，主代理负责简报与验收。 | `codex` CLI（已登录） |
+| [`codex-construction`](skills/codex-construction/SKILL.md) | 简报驱动的派工编排：主代理写好简报（背景、交付、重点、质量与资源、风格与品味）后放手，判断交给模型、只守红线与 CLI 实测事实，Codex 裸调 `codex exec` 施工；effort 按批分配（默认 medium，难点到 xhigh / max）、后台运行（有退出通知就不轮询）、对照简报验收、改-审循环。Codex 负责实现，主代理负责简报与验收。 | `codex` CLI（已登录） |
 
 ### codex-construction
 
