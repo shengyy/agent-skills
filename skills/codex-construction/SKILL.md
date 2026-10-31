@@ -65,19 +65,25 @@ description: 主代理写简报、Codex 裸调 codex exec 施工、主代理验�
 
 ## 档位
 
-effort 是给 Codex 的推理预算：要做的判断越多、错了越难回滚，给得越足；超出任务需要只会更慢更贵。用户点名档位或模型时按用户的。
+effort 是给 Codex 的推理预算，用 `medium` / `high` / `xhigh` 三档：要做的判断越多、错了越难回滚，给得越足。`low` 撑不起无人值守的施工；`max` / `ultra` 多花的钱换不来相应的提升，只在用户点名时用（CLI 都接受）。用户点名档位或模型时按用户的。
 
-`codex exec` 接受 `low` / `medium` / `high` / `xhigh` / `max` / `ultra`。参考：常规施工 `medium`；设计、排查未知根因、审查 `high`；架构定型、资金/并发/安全核心、最终态对抗审 `xhigh`，xhigh 仍拿不下的单点难题用 `max`。重派通常升一档，同档重试多半重犯同样的错；审查档一般不低于施工档。
+参考：常规施工 `medium`；设计、排查未知根因、审查 `high`；架构定型、资金/并发/安全核心、最终态对抗审 `xhigh`。重派通常升一档，同档重试多半重犯同样的错；已在 `xhigh` 还不行，问题多半在简报。审查档一般不低于施工档。
 
 ## 启动
 
 按主代理的工具选一条路径，codex 命令本身相同。
 
-**工具管理的后台任务**：主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务。
+**工具管理的后台任务**：主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务。通知只送得到还活着的会话，主代理会话可能先结束时走 nohup 回退。
 
 ```bash
 codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
   --dangerously-bypass-approvals-and-sandbox -o LAST.md - < BRIEF_FILE > RUN.log 2>&1
+```
+
+卡死的 Codex 不退出，也就没有通知，所以同时起一个看门狗后台任务：`RUN.log` 超过 N 分钟没动就退出，唤醒主代理去看日志；`LAST.md` 出现时自己退出。N 按任务规模和档位定，高档位长时间推理时日志也会静默。Codex 退出后停掉看门狗。
+
+```bash
+until [ -f LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
 ```
 
 **nohup 回退**：没有这种能力时，用 nohup 起后台并立即返回，之后靠 pid 判活。不能在前台等：外层工具超时会按进程组 SIGKILL，`nohup` 挡不住。`exec` 不能省：有它 `$!` 才是 codex 本身，杀进程才杀得到 codex。
@@ -98,7 +104,7 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
 
 ## 监控
 
-有退出通知就等通知；没有就用 `kill -0 <pid>` 判活。是否完成不从日志判，疑似卡住时再看日志。进程退出后看 `LAST.md`：
+有退出通知就等通知，卡死靠看门狗唤醒；没有就用 `kill -0 <pid>` 判活。是否完成不从日志判，疑似卡住时再看日志。进程退出后看 `LAST.md`：
 
 | 终态 | 判定 | 处置 |
 |---|---|---|
@@ -108,6 +114,8 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
 | 额度耗尽 | 无 `LAST.md`，`RUN.log` 尾部 `ERROR: You've hit your usage limit … try again at HH:MM`，exit 1 | 到点续接：有进度 resume，零进度重跑；不算失败，不升档 |
 | 崩溃 | 无 `LAST.md`，日志无错误、停在半途 | 多为外层组杀，resume 或重跑 |
 
+- 额度耗尽的等待也交给后台任务：算出到点的秒数，后台跑 `sleep <秒数>; codex exec resume …`（零进度时换成原启动命令），到点自动续接，跑完照常唤醒。
+- `BLOCKED` 要用户拍板、而用户可能已经离开时，用工具的推送通知叫回用户（如 Claude Code 的 `PushNotification`），别让整批工作停着等人发现。
 - 别在 `RUN.log` 里 grep 标记：Codex 开跑会回显简报原文，标记字样会在开头命中。
 - 日志里反复对 codex 自己的 pid `kill -0` / `ps`、git 零 commit，是自我监控死锁，杀掉重派；它在等自己起的测试或构建子进程不算。
 - 进程活着但日志长时间无新输出，可能卡死，结合任务规模判断；`codex exec` BLOCKED 后必然退出，不会停着等。
@@ -126,7 +134,7 @@ nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium"
 ## 批次
 
 - 一批是一个可独立验收的工作包，切多大由主代理判断：批越大 Codex 发挥空间越大，批越小验收越容易、回滚越便宜。
-- 同一工作树内串行，并发写会互相覆盖；要并行就用各自的 worktree，且文件集不相交。
+- 同一工作树内串行，并发写会互相覆盖；要并行就用各自的 worktree，且文件集不相交。每批各起一个后台任务，各自退出各自唤醒，到一批验收一批。
 
 ## 改-审循环
 

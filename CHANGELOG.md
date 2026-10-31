@@ -10,8 +10,9 @@
 ### Changed
 
 - **`codex-construction` 适配「Claude 当主代理、Codex 施工」**：启动拆成两条路径。主代理的工具能后台运行命令并在退出时唤醒（如 Claude Code Bash 的 `run_in_background`）时，把 `codex exec` 直接交给后台任务，退出即收到通知，不再轮询；否则走 `nohup` 回退，`exec`、`$!`、组杀这几条只属于这条路径。已在 Claude Code 2.1.314 + codex-cli 0.166.0 上端到端跑通（后台审查、退出唤醒、`-o` 落盘、`REVIEW DONE`）。
+- **其余盯梢也交给后台任务**：卡死不会退出、也就没有通知，配一个看门狗后台任务（`RUN.log` 超时未动或 `LAST.md` 出现即退出）兜底；额度耗尽用后台 `sleep` 到点自动续接；`BLOCKED` 要用户拍板时用推送通知叫回用户；并行批次各起一个后台任务、到一批验收一批。
 - **模型口径统一**：默认 `gpt-6-astra` 并每次显式传 `-m`，删去与启动命令矛盾的「以 `config.toml` 为准」——config 的默认模型和档位是给交互用的，各机不同。
-- **档位按 codex-cli 0.166.0 实测更新**：`codex exec` 接受 `low` / `medium` / `high` / `xhigh` / `max` / `ultra`；参考档位补上 `max`（xhigh 仍拿不下的单点难题）；resume 模板不再写死档位枚举。
+- **档位保持 `medium` / `high` / `xhigh` 三档并写明理由**：`low` 撑不起无人值守的施工，`max` / `ultra`（codex-cli 0.166.0 实测都接受）多花的钱换不来相应的提升，只在用户点名时用；已在 `xhigh` 还不行就回头改简报。resume 模板不再写死档位枚举。
 - **写简报**：篇幅花在仓库给不了的东西上（为什么做、完成条件、重点、红线、品味）；仓库里查得到的只给能省掉大量摸索的线索。红线明确为完整权限之外唯一的边界，每条附一句外部代价。
 - `description` 补英文触发词 delegate to Codex。
 
