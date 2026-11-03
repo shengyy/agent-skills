@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-03
+
 方向：审查换成实证。一个发现要有一次运行证明才算数；读代码推出来的意见每轮都能再挑出一批，照着改只会堆防御代码和抽象，是过度工程的主要来源。省下的预算投到让真实应用可被驱动、在测试够不着的地方做穷举检查。思路与两个新 skill 改编自 [pstack](https://github.com/cursor/plugins/tree/main/pstack)（MIT，授权见各 skill 的 `NOTICE.md`）。
 
 ### Added
