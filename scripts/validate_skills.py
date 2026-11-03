@@ -8,6 +8,9 @@ Checks, for each skills/<name>/SKILL.md:
   4. SKILL.md has a body after the frontmatter
   5. frontmatter values are strict-YAML-safe (no unquoted ": ", which GitHub's
      frontmatter renderer and other strict parsers reject)
+  6. relative links in the skill's .md files resolve to files inside the skill
+     directory (agents load references through them, and a skill is installed
+     on its own, so a link out of the directory breaks after install)
 
 No third-party dependencies — runs on a bare python3 (CI and local alike).
 Exit code 0 = all good, 1 = at least one problem.
@@ -15,10 +18,13 @@ Exit code 0 = all good, 1 = at least one problem.
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / "skills"
+LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
+INLINE_CODE_RE = re.compile(r"`[^`]*`")
 
 
 def parse_frontmatter(text: str):
@@ -43,6 +49,33 @@ def parse_frontmatter(text: str):
         fm[key.strip()] = val.strip()
     body = "\n".join(lines[end + 1 :]).strip()
     return fm, body
+
+
+def broken_links(skill_dir: pathlib.Path) -> list[str]:
+    """Relative links in the skill's .md files that miss or leave the skill dir.
+
+    Fenced code blocks and inline code are skipped: they hold example content,
+    not links the agent follows.
+    """
+    problems = []
+    for md in sorted(skill_dir.rglob("*.md")):
+        in_fence = False
+        for no, line in enumerate(md.read_text(encoding="utf-8").splitlines(), 1):
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            for target in LINK_RE.findall(INLINE_CODE_RE.sub("", line)):
+                if re.match(r"[a-z][a-z0-9+.-]*:", target) or target.startswith("#"):
+                    continue
+                path = (md.parent / target.split("#", 1)[0]).resolve()
+                rel = f"{md.relative_to(ROOT)}:{no}"
+                if not path.is_relative_to(skill_dir.resolve()):
+                    problems.append(f"{rel}: 链接 `{target}` 指到 skill 目录之外，单独安装后会失效")
+                elif not path.exists():
+                    problems.append(f"{rel}: 链接 `{target}` 指向的文件不存在")
+    return problems
 
 
 def main() -> int:
@@ -95,7 +128,10 @@ def main() -> int:
                 )
                 yaml_ok = False
 
-        if name and desc and name == d.name and body and yaml_ok:
+        link_errors = broken_links(d)
+        errors.extend(link_errors)
+
+        if name and desc and name == d.name and body and yaml_ok and not link_errors:
             ok.append(d.name)
 
     print(f"扫描 {len(skill_dirs)} 个 skill 目录\n")

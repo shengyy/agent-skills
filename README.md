@@ -36,7 +36,9 @@ npx skills add shengyy/agent-skills -l
 
 | Skill | What it does | Requires |
 |---|---|---|
-| [`codex-construction`](skills/codex-construction/SKILL.md) | Brief-driven delegation: the main agent writes a brief (background, deliverable, focus, quality & resources, style & taste), then lets Codex build via bare `codex exec`, leaving judgment to the models and hard-coding only red lines and field-tested CLI facts — effort on a medium / high / xhigh ladder (higher only when the user names it), background runs with exit notification or polling, acceptance against the brief, build-review cycles. Codex owns implementation; the main agent owns the brief and acceptance. | `codex` CLI (logged in) |
+| [`codex-construction`](skills/codex-construction/SKILL.md) | Brief-driven delegation: the main agent writes a brief (background, deliverable, focus, quality & resources, style & taste), then lets Codex build via bare `codex exec`, leaving judgment to the models and hard-coding only red lines and field-tested CLI facts — effort on a medium / high / xhigh ladder (higher only when the user names it), background runs with exit notification, acceptance by running the change, and optional independent verification where only run-proven findings count. Codex owns implementation; the main agent owns the brief and acceptance. | `codex` CLI (logged in) |
+| [`app-verification`](skills/app-verification/SKILL.md) | Generates and maintains a project-local `verify-<app>` skill so any agent can launch the real app, drive it the way a user does (web/desktop UI, CLI/TUI, service, library), and leave evidence that survives cleanup, backed by a feature map. | None beyond the project's own toolchain |
+| [`formal-verification`](skills/formal-verification/SKILL.md) | Picks the promise where a bug costs the most and tests reach the least (concurrency, retries, leases, state machines, parsers), verifies it with the tool the question calls for, shows the check can fail, and leaves a project-local verify skill that keeps the check in step with the code. | The verifier it picks (for example TLA+ tools), installed per project |
 
 ### codex-construction
 
@@ -57,21 +59,32 @@ mostly forces them into second-best solutions; what still moves the result is **
 and a high bar**. So the main agent's effort goes into the brief and acceptance, not process control.
 
 - **Hard-code facts, free up judgment**: the only hard rules are irreversible action
-  boundaries and field-tested CLI facts. Brief length, batching, effort, and review rounds are
-  the main agent's call; design, implementation, testing, and reversible trade-offs are Codex's.
-  Known biases are handled by asking for a justification, not by prohibitions.
+  boundaries and field-tested CLI facts. Brief length, batching, effort, and whether to run
+  independent verification are the main agent's call; design, implementation, testing, and
+  reversible trade-offs are Codex's. Known biases are handled by asking for a justification,
+  not by prohibitions.
 - **Write the brief like you'd brief a top engineer**: background and motivation, what the
   deliverable looks like, what matters most, the quality bar plus the resources and latitude
   to reach it, and the style and taste you expect. Add red lines and a fixed run protocol.
 - **Accept against the brief**: verify the deliverable yourself, check the focus actually
   landed, read the diff for quality and taste, and review each call Codex made on its own.
   Only irreversible decisions and blockers it can't clear come back as BLOCKED.
+- **Verify by running, not by opinion**: a finding counts only when a run proves it — a
+  failing command, a repro, output that breaks the intent. Opinions inferred from reading code
+  produce a fresh batch every round, and acting on them piles defensive code and abstractions
+  on, which is where most over-engineering comes from. So effort goes into making the real app
+  drivable ([`app-verification`](skills/app-verification/SKILL.md)) and into exhaustive checks
+  where tests can't reach ([`formal-verification`](skills/formal-verification/SKILL.md)),
+  not into extra review rounds. This direction, and the two verification skills, are adapted
+  from [pstack](https://github.com/cursor/plugins/tree/main/pstack).
+- **Progressive disclosure**: each `SKILL.md` carries the path used on every run; content
+  needed only in some situations lives in `references/`, linked from the spot where it applies.
 
 The operational rules behind these live in the skill: [Principles](skills/codex-construction/SKILL.md#原则),
 [Division of labor](skills/codex-construction/SKILL.md#分工),
 [Writing the brief](skills/codex-construction/SKILL.md#写简报),
 [Acceptance](skills/codex-construction/SKILL.md#验收), and
-[Build-review cycle](skills/codex-construction/SKILL.md#改-审循环).
+[Independent verification](skills/codex-construction/references/verification.md).
 
 ## Documentation
 
@@ -81,7 +94,9 @@ The operational rules behind these live in the skill: [Principles](skills/codex-
 | [README.zh-CN.md](README.zh-CN.md) | Synchronized Chinese version of the README. |
 | [AGENTS.md](AGENTS.md) | Shared repository conventions and task routing. |
 | [CLAUDE.md](CLAUDE.md) | Imports the shared conventions and covers Claude Code's local memory boundary. |
-| [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | Brief structure, delegation, effort tiers, CLI operations, and acceptance. |
+| [codex-construction/SKILL.md](skills/codex-construction/SKILL.md) | Brief structure, delegation, effort tiers, CLI operations, continuation, and acceptance; independent verification and the nohup fallback in `references/`. |
+| [app-verification/SKILL.md](skills/app-verification/SKILL.md) | Creating a project-local verify skill that drives the real app; the maintenance pass and a feature-map example in `references/`. |
+| [formal-verification/SKILL.md](skills/formal-verification/SKILL.md) | Choosing the target and tool, what a trustworthy check looks like, and generating the verify skill; the maintenance pass in `references/`. |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Adding skills, local installation checks, contributions, and releases. |
 | [pull_request_template.md](.github/pull_request_template.md) | PR change description and checklist; contribution procedures live in CONTRIBUTING.md. |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and unreleased changes. |
@@ -99,6 +114,8 @@ The operational rules behind these live in the skill: [Principles](skills/codex-
 | [`scripts/`](scripts/) | Repository-level validation (`validate_skills.py` checks skill structure and frontmatter). Scripts shipped with a skill belong in that skill's package. |
 | [`skills/`](skills/) | Installable skill packages; their internal layout follows the [repository conventions](AGENTS.md#仓库约定). |
 | [`skills/codex-construction/`](skills/codex-construction/) | The codex-construction package. |
+| [`skills/app-verification/`](skills/app-verification/) | The app-verification package; `NOTICE.md` keeps the license of the pstack skills it adapts. |
+| [`skills/formal-verification/`](skills/formal-verification/) | The formal-verification package; `NOTICE.md` keeps the license of the pstack skills it adapts. |
 
 ## Contributing
 
