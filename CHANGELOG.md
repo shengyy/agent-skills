@@ -7,6 +7,33 @@
 
 ## [Unreleased]
 
+方向：审查换成实证。一个发现要有一次运行证明才算数；读代码推出来的意见每轮都能再挑出一批，照着改只会堆防御代码和抽象，是过度工程的主要来源。省下的预算投到让真实应用可被驱动、在测试够不着的地方做穷举检查。思路与两个新 skill 改编自 [pstack](https://github.com/cursor/plugins/tree/main/pstack)（MIT，授权见各 skill 的 `NOTICE.md`）。
+
+### Added
+
+- **`app-verification`**：为项目生成并维护项目本地的 `verify-<app>` skill——启动、体检、驱动、证据、清理五节加功能地图，交付前完整跑一遍并确认证据熬过清理；维护流程（逐功能源码核对 + 一次实测、只改 verify skill 自己、结局 clean / changed / blocked）在 `references/maintain.md`。
+- **`formal-verification`**：选出错代价最高、测试最难覆盖的承诺，按问题选工具（模型检查器默认 TLA+、代码级验证器、基于属性的测试、证明），要求每个性质先在坏变体上失败、发现不削弱、写明界与假设、记录覆盖与同步点，生成项目本地 verify skill 并用一次破坏性改动证明它抓得到；维护流程（代码变化后判漂移还是 bug）在 `references/maintain.md`。
+
+### Changed
+
+- **`codex-construction` 以运行结果为准**：新增原则「以运行结果为准」。简报的交付写成能跑的检查；运行约定要求每项交付按用户的方式真正跑过，验收包的「测试状态」改为「验证证据」（命令与关键输出）。验收读 diff 只做减法，测试用「行为改坏会失败、只重构内部仍通过」检验。
+- **「改-审循环」改为独立验证**（`references/verification.md`）：全新会话的任务从读 diff 列问题改为把改动跑起来、设法让它违背意图；每个发现要附命令、实际输出和应有输出，风格、命名、结构和「将来可能」不报。主代理重跑裁定，只有用户会碰到的 bug、失败的门禁、写错的文档进修复轮，基线已有的问题不算这批。完整验证一批一次，修复后只重跑失败的命令。结尾标记 `REVIEW DONE` 改为 `VERIFY DONE`。档位删去「最终态对抗审」与「审查档不低于施工档」，独立验证参考 `high`。
+- **用法不变**：`/codex-construction` 或「安排 codex 施工」照旧直接用，不需要任何项目准备；`app-verification` / `formal-verification` 是可选增强，主代理只在值得时向用户提议，用户同意才作为额外一批去做。
+- **`codex-construction` 渐进式披露**：主文件保留每次派工都走的主路径；独立验证与 nohup 回退拆到 `references/`，在用到的位置写明何时读。`resume` 的 CLI 事实提成独立的「续接」一节，供 BLOCKED、无交付、额度耗尽、崩溃和修复轮共用；nohup 回退补上续接的包法。
+- 仓库约定：「超过 800 行才拆」改为渐进式披露原则（按用不用得上拆，references 只引一层，参照 Anthropic skill 编写指南）；改编的 skill 用 `NOTICE.md` 保留原授权。
+- `validate_skills.py` 新增链接检查：skill 内 `.md` 的相对链接必须指向 skill 目录内存在的文件（跳过代码块与行内代码）。
+
+### Fixed
+
+发布前的端到端试跑暴露、已修复并重跑确认：
+
+- 运行约定：Astra 把验收包另存为 `ACCEPTANCE.md` 提交进产品仓库。改为验收包只写在最终消息里，过程记录不进仓库。
+- 独立验证：验证会话为旧代码登记的 `git worktree` 用完未拆。结尾补上「拆掉自己起的进程和 worktree，证据留着」。
+- `app-verification`：生成的 verify skill 只有一键全量回归，换到加了新功能的代码上照样报 PASS、看不见新行为。改为驱动必须能单独走一个功能、换自己的输入并留证；证据目录不进版本控制。
+- `formal-verification`：生成的 verify skill 与 `verify-<app>` 同名会互相覆盖，一次性运行输出被提交。改为名字带上验证区域，仓库只放能重跑出结果的东西。
+
+试跑环境：Claude Code（主代理）+ codex-cli 0.166.0 / `gpt-6-astra`，在一个预埋领取竞态的 SQLite 队列玩具项目上。施工（`medium`）→ 主代理用真实 CLI 验收 → `resume` 修复轮（session id 一致）→ 全新会话独立验证（`high`）：末行 `VERIFY DONE`、每项交付附命令与输出、发现为无、验证前后 HEAD 与工作树一致。`app-verification` 生成的 skill 由冷读者照做跑通，并单步验证了它没见过的新功能。`formal-verification` 在没有 Java 时改用有界穷举，抓到预埋竞态并在两个真实进程上复现，产品代码未改，范围如实写明。
+
 ## [0.7.0] - 2026-10-31
 
 ### Changed
