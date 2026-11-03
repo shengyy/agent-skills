@@ -23,6 +23,17 @@
 - 仓库约定：「超过 800 行才拆」改为渐进式披露原则（按用不用得上拆，references 只引一层，参照 Anthropic skill 编写指南）；改编的 skill 用 `NOTICE.md` 保留原授权。
 - `validate_skills.py` 新增链接检查：skill 内 `.md` 的相对链接必须指向 skill 目录内存在的文件（跳过代码块与行内代码）。
 
+### Fixed
+
+发布前的端到端试跑暴露、已修复并重跑确认：
+
+- 运行约定：Astra 把验收包另存为 `ACCEPTANCE.md` 提交进产品仓库。改为验收包只写在最终消息里，过程记录不进仓库。
+- 独立验证：验证会话为旧代码登记的 `git worktree` 用完未拆。结尾补上「拆掉自己起的进程和 worktree，证据留着」。
+- `app-verification`：生成的 verify skill 只有一键全量回归，换到加了新功能的代码上照样报 PASS、看不见新行为。改为驱动必须能单独走一个功能、换自己的输入并留证；证据目录不进版本控制。
+- `formal-verification`：生成的 verify skill 与 `verify-<app>` 同名会互相覆盖，一次性运行输出被提交。改为名字带上验证区域，仓库只放能重跑出结果的东西。
+
+试跑环境：Claude Code（主代理）+ codex-cli 0.166.0 / `gpt-6-astra`，在一个预埋领取竞态的 SQLite 队列玩具项目上。施工（`medium`）→ 主代理用真实 CLI 验收 → `resume` 修复轮（session id 一致）→ 全新会话独立验证（`high`）：末行 `VERIFY DONE`、每项交付附命令与输出、发现为无、验证前后 HEAD 与工作树一致。`app-verification` 生成的 skill 由冷读者照做跑通，并单步验证了它没见过的新功能。`formal-verification` 在没有 Java 时改用有界穷举，抓到预埋竞态并在两个真实进程上复现，产品代码未改，范围如实写明。
+
 ## [0.7.0] - 2026-10-31
 
 ### Changed
