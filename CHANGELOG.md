@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-17
+
+### Changed
+
+- **`codex-construction` 默认模型切到 `gpt-6.2-astra`**（OpenAI 2026-11-17 发布，定位最难的项目，单任务成本不到 GPT-6 Astra 的三分之一）。启动、续接与 nohup 回退的命令同步更换。用户点名其它模型时照旧按用户的。
+- 模型探针的判据按实测更新：无效模型名不再返回 400，而是 exit 1 并报 `ERROR: The '<名字>' model is not supported …`。
+- 档位与运行约定不变：`gpt-6.2-astra` 支持 `low` 到 `ultra` 全部档位，`medium` / `high` / `xhigh` 三档照旧；官方指南提到的新倾向（意图不清时提出下一步并等确认、默认更简洁、少写不必要的测试与抽象）已由运行约定的「不提问、按最直接的理解去做、以『下一步』收尾不算完成」和简报的质量与品味原则覆盖，不另加条款。
+
+试跑环境：Claude Code（主代理）+ codex-cli 0.169.1 / `gpt-6.2-astra`，在一个玩具仓库上：`medium` 施工（stdin 简报、`-o` 落盘、末行 `STAGE 1 DONE`、修复已 commit）→ 换 cwd 以 `xhigh` `resume` 修复轮（session id 一致、改动落在原仓库）→ `high` 探针通过；无效模型名探针 exit 1。
+
 ## [0.8.0] - 2026-11-03
 
 方向：审查换成实证。一个发现要有一次运行证明才算数；读代码推出来的意见每轮都能再挑出一批，照着改只会堆防御代码和抽象，是过度工程的主要来源。省下的预算投到让真实应用可被驱动、在测试够不着的地方做穷举检查。思路与两个新 skill 改编自 [pstack](https://github.com/cursor/plugins/tree/main/pstack)（MIT，授权见各 skill 的 `NOTICE.md`）。
