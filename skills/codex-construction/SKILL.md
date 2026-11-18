@@ -75,7 +75,7 @@ effort 是给 Codex 的推理预算，用 `medium` / `high` / `xhigh` 三档：�
 主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务。后台任务的寿命要覆盖整批施工：Claude Code 在终端、桌面应用、VS Code 里的本地会话不限时；无人值守会话（`-p`、Agent SDK、CI、云端）默认 30 分钟、最长 2 小时，`-p` 以文本传 prompt 时默认 10 分钟，可用 `BASH_DEFAULT_TIMEOUT_MS` / `BASH_MAX_TIMEOUT_MS` 调高。工具没有这种能力、寿命覆盖不了，或主代理会话可能先结束时，改走 [nohup 回退](references/nohup-fallback.md)，启动、判活和中止都按那份文件。
 
 ```bash
-codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
+codex exec -m gpt-6.2-astra -c model_reasoning_effort="medium" \
   --dangerously-bypass-approvals-and-sandbox -o LAST.md - < BRIEF_FILE > RUN.log 2>&1
 ```
 
@@ -87,7 +87,7 @@ until [ -f LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
 
 启动要点（nohup 回退同样适用）：
 
-- 模型默认 `gpt-6-astra`，每次显式传 `-m`：`~/.codex/config.toml` 里的默认模型和档位是给交互用的，各机不同。用户点名换模型时先用 `codex exec -m <名字> "打印 ok"` 探针，400 即无效。
+- 模型默认 `gpt-6.2-astra`，每次显式传 `-m`：`~/.codex/config.toml` 里的默认模型和档位是给交互用的，各机不同。用户点名换模型时先用 `codex exec -m <名字> "打印 ok"` 探针，exit 1 且报 `model is not supported` 即无效。
 - **effort 显式传**：漏传会静默掉回 config 默认档。
 - **简报走 stdin**（`- < FILE`）：放在 argv 会暴露到 `ps`，Codex 可能把自己的进程误认成另一个会话，转去监控而不开工。
 - `--dangerously-bypass-approvals-and-sandbox` 给完整权限、不设审批，exec 和 resume 都收；边界只靠红线。
@@ -118,7 +118,7 @@ until [ -f LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
 裁决 BLOCKED、收口无交付、额度耗尽或崩溃后接着做、修复轮，都续上原施工会话：
 
 ```bash
-codex exec resume <session-id> -m gpt-6-astra -c model_reasoning_effort="<effort>" \
+codex exec resume <session-id> -m gpt-6.2-astra -c model_reasoning_effort="<effort>" \
   --dangerously-bypass-approvals-and-sandbox -o LAST2.md - < FIX_FILE > RUN2.log 2>&1
 ```
 

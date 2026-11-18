@@ -7,14 +7,14 @@
 用 nohup 起后台并立即返回，之后靠 pid 判活。不能在前台等：外层工具超时会按进程组 SIGKILL，`nohup` 挡不住。`exec` 不能省：有它 `$!` 才是 codex 本身；没有它 `$!` 是 bash 包装，杀掉包装会留下 codex 孤儿继续跑。
 
 ```bash
-nohup bash -c 'exec codex exec -m gpt-6-astra -c model_reasoning_effort="medium" \
+nohup bash -c 'exec codex exec -m gpt-6.2-astra -c model_reasoning_effort="medium" \
   --dangerously-bypass-approvals-and-sandbox -o LAST.md - < BRIEF_FILE' > RUN.log 2>&1 & echo "pid=$!"
 ```
 
 续接同样包一层：
 
 ```bash
-nohup bash -c 'exec codex exec resume <session-id> -m gpt-6-astra -c model_reasoning_effort="<effort>" \
+nohup bash -c 'exec codex exec resume <session-id> -m gpt-6.2-astra -c model_reasoning_effort="<effort>" \
   --dangerously-bypass-approvals-and-sandbox -o LAST2.md - < FIX_FILE' > RUN2.log 2>&1 & echo "pid=$!"
 ```
 
