@@ -87,7 +87,7 @@ until [ -s LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
 
 启动要点（nohup 回退同样适用）：
 
-- 模型默认 `gpt-6.2-astra`，每次显式传 `-m`：`~/.codex/config.toml` 里的默认模型和档位是给交互用的，各机不同。用户点名换模型时先用 `codex exec -m <名字> "打印 ok"` 探针，exit 1 且报 `model is not supported` 即无效。
+- 模型默认 `gpt-6.2-astra`，每次显式传 `-m`：`~/.codex/config.toml` 里的默认模型和档位是给交互用的，各机不同。用户点名换模型时先用 `codex exec --skip-git-repo-check -m <名字> "打印 ok"` 探针，exit 1 且报 `model is not supported` 即无效。
 - **effort 显式传**：漏传会静默掉回 config 默认档。
 - **简报走 stdin**（`- < FILE`）：放在 argv 会暴露到 `ps`，Codex 可能把自己的进程误认成另一个会话，转去监控而不开工。
 - `--dangerously-bypass-approvals-and-sandbox` 给完整权限、不设审批，exec 和 resume 都收；边界只靠红线。
@@ -127,7 +127,7 @@ codex exec resume <session-id> -m gpt-6.2-astra -c model_reasoning_effort="<effo
 - 裁决或修复要求同样走 stdin；每轮的 `-o` 文件和日志都用新名字，上一轮的留着备查。
 - 用显式 session id，不用 `--last`：`--last` 只在当前 cwd 找，找不到会静默新开空会话（exit 0、无警告）。session id 跨 cwd 有效。
 - resume 沿用会话最初的工作目录，在别的目录里起 resume 也改不了；要在另一个目录（例如另一个 worktree）做，开新会话。
-- effort 和权限旗标每次重传，resume 不继承。
+- effort 每次重传（resume 不继承，漏传会掉回 config 默认档）；权限旗标同样每次显式重传，避免被本机 config 的沙箱/审批设置覆盖。
 - resume 后核对日志头部 `session id:` 与原会话一致。
 - 续接同样按启动一节后台起、配看门狗。续接用裸 CLI，`/codex:*` 插件看不见裸调起的会话。
 

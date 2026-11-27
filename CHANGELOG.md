@@ -14,6 +14,7 @@
 - **`codex-construction` 看门狗改判 `-s`**：`-o` 文件在启动时就建成空文件，原示例的 `[ -f LAST.md ]` 一启动就成立，看门狗当场退出。终态表里的「有 / 无 `LAST.md`」随之改为「`LAST.md` 非空 / 为空」。
 - **`codex-construction` 启动显式传 `-C <工作目录>`**，并从日志头核对 `workdir:`：主代理 shell 的 cwd 会随前面的命令漂移，多个 worktree 并行时尤其容易起错目录。续接一节写明 resume 沿用会话最初的工作目录，要换目录就开新会话。
 - **`codex-construction` 补三条操作事实**：停掉后台任务后用 `ps` 确认 codex 进程已退出；施工中用户追加要求时，工作树没改动就改简报重派，有改动就等交付后在续接轮一并给；并行批次除了 worktree，端口、数据库和对象存储也各用一套。验收要在主代理自己的环境里跑。
+- **`codex-construction` 模型探针加 `--skip-git-repo-check`、续接权限说明对齐实测**：探针改为 `codex exec --skip-git-repo-check -m <名字> "打印 ok"`，在非 git 目录也不会被 trusted directory 检查先拦下；续接一节写明 effort 不继承必须重传、权限旗标同样每次显式重传以避免被本机 config 的沙箱/审批设置覆盖（`codex-cli 0.172.0` 实测）。
 - **`app-verification` 隔离默认每次运行自选端口**：应用能配置端口和数据位置时，生成的 verify skill 启动时挑空闲端口，记进这次运行的状态，让并行的 agent 各验各的；配置不了时才固定端口并拒绝接管。原文默认「不能并排就写明拒绝」，生成出来的 skill 用固定端口，第二批一起环境就撞上占用。
 - **`app-verification` 拒绝在带本地配置的目录里跑时，同时给出得到干净目录的命令**：实测生成的 skill 正确拒绝了主工作树（带 `.env`，应用会自动加载），但没写怎么办，主代理只好自己摸索切 worktree。
 - **`app-verification` 交付前在最小环境再跑一次**（`env -i HOME="$HOME" PATH="$PATH"`），脚本清洗环境时显式设好 locale 等变量。实测：作者 shell 带 `LANG`，生成的启动器只透传了它；换到没有 `LANG` 的 shell，macOS 上的 PostgreSQL 拒绝启动，作者自己的交付运行没发现，主代理验收时才撞上。
