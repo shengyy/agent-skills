@@ -72,17 +72,17 @@ effort 是给 Codex 的推理预算，用 `medium` / `high` / `xhigh` 三档：�
 
 ## 启动
 
-主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务。后台任务的寿命要覆盖整批施工：Claude Code 在终端、桌面应用、VS Code 里的本地会话不限时；无人值守会话（`-p`、Agent SDK、CI、云端）默认 30 分钟、最长 2 小时，`-p` 以文本传 prompt 时默认 10 分钟，可用 `BASH_DEFAULT_TIMEOUT_MS` / `BASH_MAX_TIMEOUT_MS` 调高。工具没有这种能力、寿命覆盖不了，或主代理会话可能先结束时，改走 [nohup 回退](references/nohup-fallback.md)，启动、判活和中止都按那份文件。
+主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务，再用 `ps` 按工作目录或 session id 确认这次的 codex 进程已退出。后台任务的寿命要覆盖整批施工：Claude Code 在终端、桌面应用、VS Code 里的本地会话不限时；无人值守会话（`-p`、Agent SDK、CI、云端）默认 30 分钟、最长 2 小时，`-p` 以文本传 prompt 时默认 10 分钟，可用 `BASH_DEFAULT_TIMEOUT_MS` / `BASH_MAX_TIMEOUT_MS` 调高。工具没有这种能力、寿命覆盖不了，或主代理会话可能先结束时，改走 [nohup 回退](references/nohup-fallback.md)，启动、判活和中止都按那份文件。
 
 ```bash
-codex exec -m gpt-6.2-astra -c model_reasoning_effort="medium" \
+codex exec -C <工作目录> -m gpt-6.2-astra -c model_reasoning_effort="medium" \
   --dangerously-bypass-approvals-and-sandbox -o LAST.md - < BRIEF_FILE > RUN.log 2>&1
 ```
 
-卡死的 Codex 不退出，也就没有通知，所以同时起一个看门狗后台任务，盯这一次调用的日志和 `-o` 文件（续接轮换成 `RUN2.log` / `LAST2.md`）：日志超过 N 分钟没动就退出，唤醒主代理去看日志；`-o` 文件出现时自己退出。N 按任务规模和档位定，高档位长时间推理时日志也会静默。Codex 退出后停掉看门狗。
+卡死的 Codex 不退出，也就没有通知，所以同时起一个看门狗后台任务，盯这一次调用的日志和 `-o` 文件（续接轮换成 `RUN2.log` / `LAST2.md`）：日志超过 N 分钟没动就退出，唤醒主代理去看日志；`-o` 文件写入内容时自己退出。N 按任务规模和档位定，高档位长时间推理时日志也会静默。Codex 退出后停掉看门狗。
 
 ```bash
-until [ -f LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
+until [ -s LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
 ```
 
 启动要点（nohup 回退同样适用）：
@@ -91,8 +91,9 @@ until [ -f LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
 - **effort 显式传**：漏传会静默掉回 config 默认档。
 - **简报走 stdin**（`- < FILE`）：放在 argv 会暴露到 `ps`，Codex 可能把自己的进程误认成另一个会话，转去监控而不开工。
 - `--dangerously-bypass-approvals-and-sandbox` 给完整权限、不设审批，exec 和 resume 都收；边界只靠红线。
-- `-o LAST.md` 把最终消息单独落盘，每批独立命名，启动前不得已存在。
-- 启动后看 `RUN.log` 头部：记下 `session id:` 供续接，核对 `reasoning effort:`。
+- `-C` 显式指定工作目录：主代理 shell 的 cwd 会随前面的命令漂移，多个 worktree 并行时更要写明。
+- `-o LAST.md` 把最终消息单独落盘，每批独立命名，启动前不得已存在。它在启动时就建成空文件，最终消息写入后才非空，所以判断交付用 `-s`，不用 `-f`。
+- 启动后看 `RUN.log` 头部：记下 `session id:` 供续接，核对 `workdir:` 和 `reasoning effort:`。
 
 ## 监控
 
@@ -102,9 +103,9 @@ until [ -f LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
 |---|---|---|
 | 完成 | `LAST.md` 末行 `STAGE N DONE` 或 `VERIFY DONE` | 验收 |
 | 待裁决或受阻 | `LAST.md` 末行 `BLOCKED[批N]:` | 裁决或排除阻塞后续接 |
-| 无交付 | 有 `LAST.md`，没有标记 | 读它定性，续接收口或重派 |
-| 额度耗尽 | 无 `LAST.md`，`RUN.log` 尾部 `ERROR: You've hit your usage limit … try again at HH:MM`，exit 1 | 到点续接：有进度 resume，零进度重跑；不算失败，不升档 |
-| 崩溃 | 无 `LAST.md`，日志无错误、停在半途 | 多为外层组杀，续接或重跑 |
+| 无交付 | `LAST.md` 非空，没有标记 | 读它定性，续接收口或重派 |
+| 额度耗尽 | `LAST.md` 为空，`RUN.log` 尾部 `ERROR: You've hit your usage limit … try again at HH:MM`，exit 1 | 到点续接：有进度 resume，零进度重跑；不算失败，不升档 |
+| 崩溃 | `LAST.md` 为空，日志无错误、停在半途 | 多为外层组杀，续接或重跑 |
 
 - 额度耗尽的等待也交给后台任务：算出到点的秒数，后台跑 `sleep <秒数>` 当定时器，到点被唤醒后续接（有进度 resume，零进度按启动一节重跑），看门狗随之一起起。
 - `BLOCKED` 要用户拍板、而用户可能已经离开时，用工具的推送通知叫回用户（如 Claude Code 的 `PushNotification`），别让整批工作停着等人发现。
@@ -112,6 +113,7 @@ until [ -f LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
 - 日志里反复对 codex 自己的 pid `kill -0` / `ps`、git 零 commit，是自我监控死锁，杀掉重派；它在等自己起的测试或构建子进程不算。
 - 进程活着但日志长时间无新输出，可能卡死，结合任务规模判断；`codex exec` BLOCKED 后必然退出，不会停着等。
 - 施工期间别在同一工作树跑门禁、切分支或改文件，会和它的改动互相干扰。
+- 施工中用户追加要求：工作树还没有改动，就停掉这一批、改简报、换新的 `-o` 与日志名重派；已经有改动，就等它交付，在续接轮一并给，免得打断在半截。
 
 ## 续接
 
@@ -124,6 +126,7 @@ codex exec resume <session-id> -m gpt-6.2-astra -c model_reasoning_effort="<effo
 
 - 裁决或修复要求同样走 stdin；每轮的 `-o` 文件和日志都用新名字，上一轮的留着备查。
 - 用显式 session id，不用 `--last`：`--last` 只在当前 cwd 找，找不到会静默新开空会话（exit 0、无警告）。session id 跨 cwd 有效。
+- resume 沿用会话最初的工作目录，在别的目录里起 resume 也改不了；要在另一个目录（例如另一个 worktree）做，开新会话。
 - effort 和权限旗标每次重传，resume 不继承。
 - resume 后核对日志头部 `session id:` 与原会话一致。
 - 续接同样按启动一节后台起、配看门狗。续接用裸 CLI，`/codex:*` 插件看不见裸调起的会话。
@@ -132,7 +135,7 @@ codex exec resume <session-id> -m gpt-6.2-astra -c model_reasoning_effort="<effo
 
 对照简报验收，不只看「跑通了没有」：
 
-- **交付**：主代理亲自跑简报里的检查和验收包给出的命令，以实际输出为准。验收包里的证据是线索不是结论，CI 全绿也只是输入：它们都没有像用户那样把改动跑起来。
+- **交付**：主代理亲自跑简报里的检查和验收包给出的命令，以实际输出为准；在主代理自己的环境里跑，作者环境里的变量、已装依赖和残留状态都可能掩盖问题。验收包里的证据是线索不是结论，CI 全绿也只是输入：它们都没有像用户那样把改动跑起来。
 - **重点**：用户最在意的事是否真的做到，有没有被次要工作挤掉，范围有没有被悄悄缩小。
 - **质量与品味**：读 diff 是为了做减法：说不清为什么值得的新抽象、配置项、兼容层，不像这个仓库的代码，都要改。测试用两个设想的改动检验：把行为改坏，它该失败；只重构内部、行为不变，它该照常通过。做不到的测试只是负担，删掉或重写。
 - **自主判断与顺手修复**：逐条核实。不认可的顺手修复撤掉对应 commit；不同意的判断给出理由，而不只是换成自己的偏好。
@@ -144,5 +147,5 @@ codex exec resume <session-id> -m gpt-6.2-astra -c model_reasoning_effort="<effo
 ## 批次
 
 - 一批是一个可独立验收的工作包，切多大由主代理判断：批越大 Codex 发挥空间越大，批越小验收越容易、回滚越便宜。
-- 同一工作树内串行，并发写会互相覆盖；要并行就用各自的 worktree，且文件集不相交。每批各起一个后台任务，各自退出各自唤醒，到一批验收一批。
+- 同一工作树内串行，并发写会互相覆盖；要并行就用各自的 worktree，且文件集不相交。本地运行环境也不共用：端口、数据库和对象存储各用一套。项目的 verify skill 每次运行自选端口时各批直接各跑各的，否则按它写明的方式串行。每批各起一个后台任务，各自退出各自唤醒，到一批验收一批。
 - 本 skill 不依赖任何项目准备：没有 verify skill，交付照样写成能跑的检查（命令、接口、测试、数据）。补验证能力是额外的一批，主代理可以提议，用户同意才做，不要自己插进计划。值得提议的情形：项目没有脚本化的方式驱动真实应用，每批都要人去点，用 `app-verification` skill 补上，之后每批的交付和独立验证都照同一种方式跑；并发、重试、锁与租约、状态机、解析器这类核心出错代价高，坏掉的那种交错又很少被测试或一次运行撞上，用 `formal-verification` skill 给它一个形式化检查，比加验证轮次或升档更能兜住。
