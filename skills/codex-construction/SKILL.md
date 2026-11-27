@@ -72,7 +72,7 @@ effort 是给 Codex 的推理预算，用 `medium` / `high` / `xhigh` 三档：�
 
 ## 启动
 
-主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务，再用 `ps` 按工作目录确认这次的 codex 进程已退出。后台任务的寿命要覆盖整批施工：Claude Code 在终端、桌面应用、VS Code 里的本地会话不限时；无人值守会话（`-p`、Agent SDK、CI、云端）默认 30 分钟、最长 2 小时，`-p` 以文本传 prompt 时默认 10 分钟，可用 `BASH_DEFAULT_TIMEOUT_MS` / `BASH_MAX_TIMEOUT_MS` 调高。工具没有这种能力、寿命覆盖不了，或主代理会话可能先结束时，改走 [nohup 回退](references/nohup-fallback.md)，启动、判活和中止都按那份文件。
+主代理的工具能后台运行命令、并在命令退出时唤醒主代理（如 Claude Code Bash 的 `run_in_background`）时，把命令直接交给它，退出即收到通知，不用轮询；要中止就停掉这个后台任务，再用 `ps` 按工作目录或 session id 确认这次的 codex 进程已退出。后台任务的寿命要覆盖整批施工：Claude Code 在终端、桌面应用、VS Code 里的本地会话不限时；无人值守会话（`-p`、Agent SDK、CI、云端）默认 30 分钟、最长 2 小时，`-p` 以文本传 prompt 时默认 10 分钟，可用 `BASH_DEFAULT_TIMEOUT_MS` / `BASH_MAX_TIMEOUT_MS` 调高。工具没有这种能力、寿命覆盖不了，或主代理会话可能先结束时，改走 [nohup 回退](references/nohup-fallback.md)，启动、判活和中止都按那份文件。
 
 ```bash
 codex exec -C <工作目录> -m gpt-6.2-astra -c model_reasoning_effort="medium" \
@@ -103,7 +103,7 @@ until [ -s LAST.md ] || [ -n "$(find RUN.log -mmin +20)" ]; do sleep 60; done
 |---|---|---|
 | 完成 | `LAST.md` 末行 `STAGE N DONE` 或 `VERIFY DONE` | 验收 |
 | 待裁决或受阻 | `LAST.md` 末行 `BLOCKED[批N]:` | 裁决或排除阻塞后续接 |
-| 无交付 | 有 `LAST.md`，没有标记 | 读它定性，续接收口或重派 |
+| 无交付 | `LAST.md` 非空，没有标记 | 读它定性，续接收口或重派 |
 | 额度耗尽 | `LAST.md` 为空，`RUN.log` 尾部 `ERROR: You've hit your usage limit … try again at HH:MM`，exit 1 | 到点续接：有进度 resume，零进度重跑；不算失败，不升档 |
 | 崩溃 | `LAST.md` 为空，日志无错误、停在半途 | 多为外层组杀，续接或重跑 |
 
